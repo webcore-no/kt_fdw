@@ -23,11 +23,11 @@ USE_MODULE_DB = 1
 TESTS        = $(wildcard test/sql/*.sql)
 REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --inputdir=test --outputdir=test \
-	--load-language=plpgsql --load-extension=$(EXTENSION)
+               --load-language=plpgsql --load-extension=$(EXTENSION)
 MODULE_big      = $(EXTENSION)
 OBJS         =  $(patsubst %.c,%.o,$(wildcard src/*.c)) src/ktlangc.o
-PG_CONFIG    = /usr/local/pgsql/bin/pg_config
-SHLIB_LINK = -lkyototycoon -lsasl2
+PG_CONFIG   ?= pg_config
+SHLIB_LINK   = -lkyototycoon -lsasl2
 
 CXXFLAGS = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter
 PG_CPPFLAGS = -DUSE_TRANSACTIONS
