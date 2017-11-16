@@ -126,6 +126,14 @@ bool ktadd(KTDB*db, const char * key, const char * value)
     return pdb->add(skey, sval);
 }
 
+bool ktaddl(KTDB*db, const char * key, size_t keylen, const char * value, size_t vallen)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    return pdb->add(key, keylen, value, vallen);
+}
+
 bool ktreplace(KTDB*db, const char * key, const char * value)
 {
     _assert_(db);
@@ -137,6 +145,14 @@ bool ktreplace(KTDB*db, const char * key, const char * value)
     return pdb->replace(skey, sval);
 }
 
+bool ktreplacel(KTDB*db, const char * key, size_t keylen,
+                         const char * value, size_t vallen)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    return pdb->replace(key, keylen, value, vallen);
+}
 
 bool ktremove(KTDB*db, const char * key)
 {
@@ -146,6 +162,14 @@ bool ktremove(KTDB*db, const char * key)
     std::string skey(key);
 
     return pdb->remove(skey);
+}
+
+bool ktremovel(KTDB*db, const char * key, size_t keylen)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    return pdb->remove(key, keylen);
 }
 
 const char *ktgeterror(KTDB* db)

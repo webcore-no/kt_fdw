@@ -72,8 +72,11 @@ bool next(KTDB* db, KTCUR* cur, char **key, char **value);
 bool ktget(KTDB* db, char *key, char **value);
 
 bool ktadd(KTDB*db, const char * key, const char * value);
+bool ktaddl(KTDB*db, const char * key, size_t keylen,  const char * value, size_t vallen);
 bool ktreplace(KTDB*db, const char * key, const char * value);
+bool ktreplacel(KTDB*db, const char * key, size_t keylen, const char * value, size_t vallen);
 bool ktremove(KTDB*db, const char * key);
+bool ktremovel(KTDB*db, const char * key, size_t keylen);
 
 const char *ktgeterror(KTDB* db);
 const char *ktgeterrormsg(KTDB* db);

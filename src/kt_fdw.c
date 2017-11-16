@@ -764,9 +764,8 @@ ktGetForeignPlan(PlannerInfo *root,
 }
 
 
-    static void
-ktBeginForeignScan(ForeignScanState *node,
-        int eflags)
+static void
+ktBeginForeignScan(ForeignScanState *node, int eflags)
 {
     /*
      * Begin executing a foreign scan. This is called during executor startup.
@@ -1100,12 +1099,13 @@ ktBeginForeignModify(ModifyTableState *mtstate,
 
     attr = RelationGetDescr(rel)->attrs[0];
     Assert(!attr->attisdropped);
-    getTypeOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
+    getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
     fmgr_info(typefnoid, fmstate->key_info);
 
     attr = RelationGetDescr(rel)->attrs[1];
     Assert(!attr->attisdropped);
-    getTypeOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
+
+    getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
     fmgr_info(typefnoid, fmstate->value_info);
 
     initTableOptions(&(fmstate->opt));
@@ -1150,10 +1150,9 @@ ktExecForeignInsert(EState *estate,
      *
      */
 
-    char * key_value;
-    char * value_value;
     Datum value;
     bool isnull;
+    bytea *bkey, *bval;
     KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
 
     elog(DEBUG1,"entering function %s",__func__);
@@ -1161,15 +1160,19 @@ ktExecForeignInsert(EState *estate,
     value = slot_getattr(planSlot, 1, &isnull);
     if(isnull)
         elog(ERROR, "can't get key value");
-    key_value = OutputFunctionCall(fmstate->key_info, value);
+
+    bkey = SendFunctionCall(fmstate->key_info, value);
 
     value = slot_getattr(planSlot, 2, &isnull);
     if(isnull)
         elog(ERROR, "can't get value value");
-    value_value = OutputFunctionCall(fmstate->value_info, value);
 
-    if(!ktadd(fmstate->db, key_value, value_value))
+    bval = SendFunctionCall(fmstate->value_info, value);
+
+    if(!ktaddl(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ,
+                            VARDATA(bval), VARSIZE(bval) - VARHDRSZ))
         elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
+
     return slot;
 }
 
@@ -1206,11 +1209,9 @@ ktExecForeignUpdate(EState *estate,
      * foreign table will fail with an error message.
      *
      */
-    char * key_value;
-    char * key_value_new;
-    char * value_value;
     Datum value;
     bool isnull;
+    bytea *bkey, *bkey_old, *bval;
     KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
 
     elog(DEBUG1,"entering function %s",__func__);
@@ -1218,25 +1219,31 @@ ktExecForeignUpdate(EState *estate,
     value = ExecGetJunkAttribute(planSlot, fmstate->key_junk_no, &isnull);
     if(isnull)
         elog(ERROR, "can't get junk key value");
-    key_value = OutputFunctionCall(fmstate->key_info, value);
+
+    bkey = SendFunctionCall(fmstate->key_info, value);
 
     value = slot_getattr(planSlot, 1, &isnull);
     if(isnull)
         elog(ERROR, "can't get new key value");
-    key_value_new = OutputFunctionCall(fmstate->key_info, value);
 
-    if(strcmp(key_value, key_value_new) != 0) {
-        elog(ERROR, "You cannot update key values (original key value was %s)", key_value);
+    bkey_old = SendFunctionCall(fmstate->key_info, value);
+
+    if(VARSIZE(bkey) != VARSIZE(bkey_old) ||
+       memcmp(VARDATA(bkey), VARDATA(bkey_old), VARSIZE(bkey)) != 0) {
+        elog(ERROR, "You cannot update key values");
         return slot;
     }
 
     value = slot_getattr(planSlot, 2, &isnull);
     if(isnull)
         elog(ERROR, "can't get value value");
-    value_value = OutputFunctionCall(fmstate->value_info, value);
 
-    if(!ktreplace(fmstate->db, key_value, value_value))
+    bval = SendFunctionCall(fmstate->value_info, value);
+
+    if(!ktreplacel(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ,
+                                VARDATA(bval), VARSIZE(bval) - VARHDRSZ))
         elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
+
     return slot;
 }
 
@@ -1271,9 +1278,9 @@ ktExecForeignDelete(EState *estate,
      * from the foreign table will fail with an error message.
      */
 
-    char * key_value;
     Datum value;
     bool isnull;
+    bytea *bkey;
     KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
 
     elog(DEBUG1,"entering function %s",__func__);
@@ -1282,9 +1289,9 @@ ktExecForeignDelete(EState *estate,
     if(isnull)
         elog(ERROR, "can't get key value");
 
-    key_value = OutputFunctionCall(fmstate->key_info, value);
+    bkey = SendFunctionCall(fmstate->key_info, value);
 
-    if(!ktremove(fmstate->db, key_value))
+    if(!ktremovel(fmstate->db, VARDATA(bkey), VARSIZE(bkey)- VARHDRSZ))
         elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
 
     return slot;
