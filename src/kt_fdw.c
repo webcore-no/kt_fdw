@@ -1229,7 +1229,7 @@ ktExecForeignUpdate(EState *estate,
     bkey_old = SendFunctionCall(fmstate->key_info, value);
 
     if(VARSIZE(bkey) != VARSIZE(bkey_old) ||
-       memcmp(VARDATA(bkey), VARDATA(bkey_old), VARSIZE(bkey)) != 0) {
+       memcmp(VARDATA(bkey), VARDATA(bkey_old), VARSIZE(bkey) - VARHDRSZ) != 0) {
         elog(ERROR, "You cannot update key values");
         return slot;
     }
