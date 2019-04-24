@@ -71,6 +71,12 @@ extern Datum kt_fdw_validator(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(kt_fdw_handler);
 PG_FUNCTION_INFO_V1(kt_fdw_validator);
 
+extern HeapTuple
+heap_form_tuple(TupleDesc tupleDescriptor,
+                                Datum *values,
+                                bool *isnull);
+
+
 
 /* callback functions */
 static void ktGetForeignRelSize(PlannerInfo *root,
@@ -303,6 +309,7 @@ static void ktSubXactCallback(XactEvent event, void * arg)
         switch(event) {
 
             case XACT_EVENT_PRE_COMMIT:
+	    case XACT_EVENT_PARALLEL_PRE_COMMIT:
                 if(!ktcommit(entry->db))
                     elog(ERROR,"Could not commit to KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
                 break;
@@ -312,10 +319,12 @@ static void ktSubXactCallback(XactEvent event, void * arg)
                 break;
             case XACT_EVENT_COMMIT:
             case XACT_EVENT_PREPARE:
+	    case XACT_EVENT_PARALLEL_COMMIT:
                 /* Should not get here -- pre-commit should have handled it */
                 elog(ERROR, "missed cleaning up connection during pre-commit");
                 break;
             case XACT_EVENT_ABORT:
+            case XACT_EVENT_PARALLEL_ABORT:
                 if(!ktabort(entry->db))
                     elog(ERROR,"Could not abort from KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
                 break;
@@ -571,6 +580,7 @@ getKeyBasedQual(Node *node, TupleDesc tupdesc, char **value, bool *key_based_qua
     *value = NULL;
     *key_based_qual = false;
 
+
     if (!node)
         return;
 
@@ -600,12 +610,17 @@ getKeyBasedQual(Node *node, TupleDesc tupdesc, char **value, bool *key_based_qua
             initStringInfo(&buf);
 
             /* And get the column and value... */
+#if PG_VERSION_NUM >= 11000
+            key = NameStr(tupdesc->attrs[varattno - 1].attname);
+#else
             key = NameStr(tupdesc->attrs[varattno - 1]->attname);
+#endif
             *value = TextDatumGetCString(((Const *) right)->constvalue);
 
             /*
-             * We can push down this qual if: - The operatory is TEXTEQ - The
-             * qual is on the key column
+             * We can push down this qual if:
+	     * - The operatory is TEXTEQ
+	     * - The qual is on the key column
              */
             if (op->opfuncid == PROCID_TEXTEQ && strcmp(key, "key") == 0)
                 *key_based_qual = true;
@@ -640,6 +655,8 @@ static void ktGetForeignRelSize(PlannerInfo *root,
      * can compute a better estimate of the average result row width.
      */
 
+    ListCell *cell;
+
     KtFdwPlanState *fdw_private;
     KTDB * db;
     //ktTableOptions table_options;
@@ -655,6 +672,36 @@ static void ktGetForeignRelSize(PlannerInfo *root,
     getTableOptions(foreigntableid, &(fdw_private->opt));
 
     /* initialize reuired state in fdw_private */
+
+    foreach (cell, baserel->baserestrictinfo)
+    {
+	    RestrictInfo *info = (RestrictInfo *) lfirst(cell);
+	    if (IsA(info->clause, OpExpr))
+	    {
+		OpExpr *op = (OpExpr *) info->clause;
+		Node *left, *right;
+		Index varattno;
+
+		if (list_length(op->args) != 2)
+		    break;
+
+		left = list_nth(op->args, 0);
+
+		if (!IsA(left, Var))
+		    break;
+
+		varattno = ((Var *) left)->varattno;
+
+		right = list_nth(op->args, 1);
+
+		if (IsA(right, Const)) {
+			/* todo: how to check key name? */
+			baserel->rows = 1;
+			return;
+		}
+
+	    }
+    }
 
     db = GetKtConnection(&(fdw_private->opt));
 
@@ -701,6 +748,9 @@ ktGetForeignPaths(PlannerInfo *root,
     /* Create a ForeignPath node and add it as only possible path */
     add_path(baserel, (Path *)
             create_foreignscan_path(root, baserel,
+#if PG_VERSION_NUM >= 11000
+		NULL,
+#endif
                 baserel->rows,
                 startup_cost,
                 total_cost,
@@ -714,7 +764,7 @@ ktGetForeignPaths(PlannerInfo *root,
 
 
 
-    static ForeignScan *
+static ForeignScan *
 ktGetForeignPlan(PlannerInfo *root,
         RelOptInfo *baserel,
         Oid foreigntableid,
@@ -814,11 +864,11 @@ ktBeginForeignScan(ForeignScanState *node, int eflags)
     if (node->ss.ps.plan->qual) {
         ListCell   *lc;
 
-        foreach(lc, node->ss.ps.qual){
+        foreach(lc, node->ss.ps.plan->qual){
             /* Only the first qual can be pushed down to Redis */
             ExprState  *state = lfirst(lc);
 
-            getKeyBasedQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att,
+            getKeyBasedQual((Node *) state, node->ss.ss_currentRelation->rd_att,
              &estate->key_based_qual_value, &estate->key_based_qual);
 
             if (estate->key_based_qual)
@@ -864,12 +914,18 @@ ktIterateForeignScan(ForeignScanState *node)
     KtFdwExecState *estate = (KtFdwExecState *) node->fdw_state;
 
     TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
+    TupleDesc       desc = slot->tts_tupleDescriptor;
 
     bool found = false;
-    char * key;
-    char * value;
-    char ** values;
+    bool  *nulls;
     HeapTuple tuple;
+    Datum *dvalues;
+    bytea *b;
+    text *t;
+    int i;
+
+    size_t len[2];
+    char **val = palloc(sizeof(char *) * 2);
 
     elog(DEBUG1,"entering function %s",__func__);
 
@@ -883,24 +939,58 @@ ktIterateForeignScan(ForeignScanState *node)
         if (!estate->key_based_qual_sent)
         {
             estate->key_based_qual_sent=true;
-            found = ktget(estate->db, estate->key_based_qual_value, &value);
+            found = ktgetl(estate->db, estate->key_based_qual_value, &len[0], &val[1], &len[1]);
+	    len[0] = strlen(estate->key_based_qual_value);
+	    val[0] = estate->key_based_qual_value;
         }
     }
     else {
-        found = next(estate->db, estate->cur, &key, &value);
+        found = nextl(estate->db, estate->cur, &val[0], &len[0], &val[1], &len[1]);
     }
 
     if (found)
     {
-        values = (char **) palloc(sizeof(char *) * 2);
-        if (estate->key_based_qual)
-            values[0] = estate->key_based_qual_value;
-        else
-            values[0] = key;
-        values[1] = value;
-        tuple = BuildTupleFromCStrings(estate->attinmeta, values);
-        ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+	dvalues = (Datum *) palloc(2 * sizeof(Datum));
+	nulls = (bool *) palloc(2 * sizeof(bool));
+	for (i = 0; i < 2 ; i++)
+	{
+		nulls[i] = false;
+
+		switch(TupleDescAttr(desc, i)->atttypid) {
+			case TEXTOID:
+			case VARCHAROID:
+				if (len[i] != strlen(val[i])) {
+					elog(ERROR, "null characters not allowed in text values");
+					nulls[i] = true;
+				} else {
+					t = palloc(len[i] + VARHDRSZ);
+					memcpy(VARDATA(t), val[i], len[i]);
+					SET_VARSIZE(t, len[i] + VARHDRSZ);
+					dvalues[i] = PointerGetDatum(t);
+				}
+
+				break;
+			case BYTEAOID:
+				b = palloc(len[i] + VARHDRSZ);
+				memcpy(VARDATA(b), val[i], len[i]);
+				SET_VARSIZE(b, len[i] + VARHDRSZ);
+				dvalues[i] = PointerGetDatum(b);
+				break;
+			default:
+				elog(ERROR, "type not supported");
+				nulls[i] = true;
+		}
+	}
+
+	tuple = heap_form_tuple(estate->attinmeta->tupdesc, dvalues, nulls);
+	ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+
+	pfree(dvalues);
+	pfree(nulls);
     }
+
+    pfree(val);
+
     /* then return the slot */
     return slot;
 }
@@ -987,7 +1077,11 @@ ktAddForeignUpdateTargets(Query *parsetree,
 
     elog(DEBUG1,"entering function %s",__func__);
 
+#if PG_VERSION_NUM >= 11000
+    attr = &RelationGetDescr(target_relation)->attrs[0];
+#else
     attr = RelationGetDescr(target_relation)->attrs[0];
+#endif
 
     varnode = makeVar(parsetree->resultRelation,
             attr->attnum,
@@ -1097,12 +1191,20 @@ ktBeginForeignModify(ModifyTableState *mtstate,
     }
 
 
+#if PG_VERSION_NUM >= 11000
+    attr = &RelationGetDescr(rel)->attrs[0];
+#else
     attr = RelationGetDescr(rel)->attrs[0];
+#endif
     Assert(!attr->attisdropped);
     getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
     fmgr_info(typefnoid, fmstate->key_info);
 
+#if PG_VERSION_NUM >= 11000
+    attr = &RelationGetDescr(rel)->attrs[1];
+#else
     attr = RelationGetDescr(rel)->attrs[1];
+#endif
     Assert(!attr->attisdropped);
 
     getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);

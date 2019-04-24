@@ -71,6 +71,8 @@ void ktcurdel(KTCUR* cur);
 bool next(KTDB* db, KTCUR* cur, char **key, char **value);
 bool ktget(KTDB* db, char *key, char **value);
 
+bool ktgetl(KTDB* db, char *key, size_t *key_len, char **value, size_t *val_len);
+bool nextl(KTDB* db, KTCUR* cur, char **key, size_t *key_len, char **value, size_t *val_len);
 bool ktadd(KTDB*db, const char * key, const char * value);
 bool ktaddl(KTDB*db, const char * key, size_t keylen,  const char * value, size_t vallen);
 bool ktreplace(KTDB*db, const char * key, const char * value);

@@ -99,6 +99,29 @@ bool next(KTDB* db, KTCUR* cur, char **key, char **value)
     return true;
 }
 
+bool nextl(KTDB* db, KTCUR* cur, char **key, size_t *key_len, char **value, size_t *val_len)
+{
+    std::string skey;
+    std::string sval;
+
+    RemoteDB::Cursor *rcur = (RemoteDB::Cursor *) cur;
+    bool res = rcur->get(&skey, &sval, NULL, true);
+    if(!res)
+        return false;
+
+    *key = (char *) palloc(sizeof(char)*(skey.length() + 1));
+    *value = (char *) palloc(sizeof(char)*(sval.length() + 1));
+    *key_len = skey.length();
+    *val_len = sval.length();
+
+    memcpy(*key, skey.c_str(), skey.length());
+    memcpy(*value, sval.c_str(), sval.length());
+    *(*key + skey.length()) = '\0';
+    *(*value + sval.length()) = '\0';
+
+    return true;
+}
+
 bool ktget(KTDB* db, char *key, char **value){
     _assert_(db && key);
 
@@ -111,6 +134,23 @@ bool ktget(KTDB* db, char *key, char **value){
 
     *value = (char *) palloc(sizeof(char)*(sval.length()+1));
     std::strcpy(*value, sval.c_str());
+
+    return true;
+}
+
+bool ktgetl(KTDB* db, char *key, size_t *key_len, char **value, size_t *val_len){
+    _assert_(db && key);
+
+    std::string skey(key);
+    std::string sval;
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    if(!pdb->get(skey, &sval))
+        return false;
+
+    *value = (char *) palloc(sizeof(char)*(sval.length()));
+    *val_len = sval.length();
+    memcpy(*value, sval.c_str(), sval.length());
 
     return true;
 }
