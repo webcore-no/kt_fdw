@@ -748,8 +748,8 @@ ktGetForeignPaths(PlannerInfo *root,
     /* Create a ForeignPath node and add it as only possible path */
     add_path(baserel, (Path *)
             create_foreignscan_path(root, baserel,
-#if PG_VERSION_NUM >= 110000
-		NULL,
+#if PG_VERSION_NUM >= 100000
+				NULL, // PathTarget
 #endif
                 baserel->rows,
                 startup_cost,
