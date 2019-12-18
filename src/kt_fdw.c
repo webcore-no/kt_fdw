@@ -610,7 +610,7 @@ getKeyBasedQual(Node *node, TupleDesc tupdesc, char **value, bool *key_based_qua
             initStringInfo(&buf);
 
             /* And get the column and value... */
-#if PG_VERSION_NUM >= 11000
+#if PG_VERSION_NUM >= 110000
             key = NameStr(tupdesc->attrs[varattno - 1].attname);
 #else
             key = NameStr(tupdesc->attrs[varattno - 1]->attname);
@@ -748,7 +748,7 @@ ktGetForeignPaths(PlannerInfo *root,
     /* Create a ForeignPath node and add it as only possible path */
     add_path(baserel, (Path *)
             create_foreignscan_path(root, baserel,
-#if PG_VERSION_NUM >= 11000
+#if PG_VERSION_NUM >= 110000
 		NULL,
 #endif
                 baserel->rows,
@@ -1077,7 +1077,7 @@ ktAddForeignUpdateTargets(Query *parsetree,
 
     elog(DEBUG1,"entering function %s",__func__);
 
-#if PG_VERSION_NUM >= 11000
+#if PG_VERSION_NUM >= 110000
     attr = &RelationGetDescr(target_relation)->attrs[0];
 #else
     attr = RelationGetDescr(target_relation)->attrs[0];
@@ -1191,7 +1191,7 @@ ktBeginForeignModify(ModifyTableState *mtstate,
     }
 
 
-#if PG_VERSION_NUM >= 11000
+#if PG_VERSION_NUM >= 110000
     attr = &RelationGetDescr(rel)->attrs[0];
 #else
     attr = RelationGetDescr(rel)->attrs[0];
@@ -1200,7 +1200,7 @@ ktBeginForeignModify(ModifyTableState *mtstate,
     getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
     fmgr_info(typefnoid, fmstate->key_info);
 
-#if PG_VERSION_NUM >= 11000
+#if PG_VERSION_NUM >= 110000
     attr = &RelationGetDescr(rel)->attrs[1];
 #else
     attr = RelationGetDescr(rel)->attrs[1];
