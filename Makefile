@@ -27,7 +27,7 @@ REGRESS_OPTS = --inputdir=test --outputdir=test \
 MODULE_big      = $(EXTENSION)
 OBJS         =  $(patsubst %.c,%.o,$(wildcard src/*.c)) src/ktlangc.o
 PG_CONFIG   ?= pg_config
-SHLIB_LINK   = -lkyototycoon -lsasl2
+SHLIB_LINK   = -lkyototycoon -lsasl2 -lkyotocabinet
 
 CXXFLAGS = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter
 PG_CPPFLAGS = -DUSE_TRANSACTIONS
