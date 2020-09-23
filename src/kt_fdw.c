@@ -212,6 +212,7 @@ typedef struct {
     Relation rel;
     FmgrInfo *key_info;
     FmgrInfo *value_info;
+    FmgrInfo *flags_info;
     AttrNumber key_junk_no;
 } KtFdwModifyState;
 
@@ -282,7 +283,6 @@ static bool isValidOption(const char *option, Oid context)
 #ifdef DEBUG
     elog(NOTICE, "isValidOption %s", option);
 #endif
-    
     for (opt = valid_options; opt->optname; opt++){
         if (context == opt->optcontext && strcmp(opt->optname, option) == 0) {
             return true;
@@ -950,8 +950,8 @@ ktIterateForeignScan(ForeignScanState *node)
 
     if (found)
     {
-	dvalues = (Datum *) palloc(2 * sizeof(Datum));
-	nulls = (bool *) palloc(2 * sizeof(bool));
+	dvalues = (Datum *) palloc(3 * sizeof(Datum));
+	nulls = (bool *) palloc(3 * sizeof(bool));
 	for (i = 0; i < 2 ; i++)
 	{
 		nulls[i] = false;
@@ -981,6 +981,8 @@ ktIterateForeignScan(ForeignScanState *node)
 				nulls[i] = true;
 		}
 	}
+        /* set flags to null */
+        nulls[2] = true;
 
 	tuple = heap_form_tuple(estate->attinmeta->tupdesc, dvalues, nulls);
 	ExecStoreTuple(tuple, slot, InvalidBuffer, false);
@@ -1179,6 +1181,7 @@ ktBeginForeignModify(ModifyTableState *mtstate,
     fmstate->rel = rel;
     fmstate->key_info = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
     fmstate->value_info = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
+    fmstate->flags_info = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
 
 
     if (operation == CMD_UPDATE || operation == CMD_DELETE) {
@@ -1209,6 +1212,16 @@ ktBeginForeignModify(ModifyTableState *mtstate,
 
     getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
     fmgr_info(typefnoid, fmstate->value_info);
+
+#if PG_VERSION_NUM >= 110000
+    attr = &RelationGetDescr(rel)->attrs[2];
+#else
+    attr = RelationGetDescr(rel)->attrs[2];
+#endif
+    Assert(!attr->attisdropped);
+
+    getTypeBinaryOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
+    fmgr_info(typefnoid, fmstate->flags_info);
 
     initTableOptions(&(fmstate->opt));
     getTableOptions(RelationGetRelid(rel), &(fmstate->opt));
@@ -1254,7 +1267,8 @@ ktExecForeignInsert(EState *estate,
 
     Datum value;
     bool isnull;
-    bytea *bkey, *bval;
+    bool isSet = false;
+    bytea *bkey, *bval, *sval;
     KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
 
     elog(DEBUG1,"entering function %s",__func__);
@@ -1271,9 +1285,24 @@ ktExecForeignInsert(EState *estate,
 
     bval = SendFunctionCall(fmstate->value_info, value);
 
-    if(!ktaddl(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ,
-                            VARDATA(bval), VARSIZE(bval) - VARHDRSZ))
-        elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
+    value = slot_getattr(planSlot, 3, &isnull);
+    if(!isnull) {
+      sval = SendFunctionCall(fmstate->flags_info, value);
+      if(memcmp(VARDATA(sval), "kt_set", VARSIZE(sval) - VARHDRSZ) == 0) {
+        isSet = true;
+      }
+    }
+    if(isSet) {
+        if(!ktsetl(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ,
+                            VARDATA(bval), VARSIZE(bval) - VARHDRSZ)) {
+          elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
+        }
+    } else {
+      if(!ktaddl(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ,
+                            VARDATA(bval), VARSIZE(bval) - VARHDRSZ)) {
+          elog(ERROR, "%d, Error from kt: %s", ktgeterror(fmstate->db));
+        }
+    }
 
     return slot;
 }
