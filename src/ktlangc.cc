@@ -194,6 +194,15 @@ bool ktreplacel(KTDB*db, const char * key, size_t keylen,
     return pdb->replace(key, keylen, value, vallen);
 }
 
+bool ktsetl(KTDB*db, const char * key, size_t keylen,
+                         const char * value, size_t vallen)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    return pdb->set(key, keylen, value, vallen);
+}
+
 bool ktremove(KTDB*db, const char * key)
 {
     _assert_(db);
