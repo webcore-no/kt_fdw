@@ -15,6 +15,9 @@
  */
 
 #include "postgres.h"
+#if PG_VERSION_NUM >= 130000
+#include "postgresql/13/server/common/hashfn.h"
+#endif
 #include "ktlangc.h"
 
 #include "access/reloptions.h"
