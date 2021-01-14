@@ -988,7 +988,7 @@ ktIterateForeignScan(ForeignScanState *node)
         nulls[2] = true;
 
 	tuple = heap_form_tuple(estate->attinmeta->tupdesc, dvalues, nulls);
-	ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+	ExecStoreHeapTuple(tuple, slot, false);
 
 	pfree(dvalues);
 	pfree(nulls);
