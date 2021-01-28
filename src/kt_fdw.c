@@ -16,7 +16,7 @@
 
 #include "postgres.h"
 #if PG_VERSION_NUM >= 130000
-#include "postgresql/13/server/common/hashfn.h"
+#include "common/hashfn.h"
 #endif
 #include "ktlangc.h"
 
@@ -95,7 +95,8 @@ static ForeignScan *ktGetForeignPlan(PlannerInfo *root,
         Oid foreigntableid,
         ForeignPath *best_path,
         List *tlist,
-        List *scan_clauses);
+        List *scan_clauses,
+        Plan *plan);
 
 static void ktBeginForeignScan(ForeignScanState *node,
         int eflags);
@@ -683,7 +684,6 @@ static void ktGetForeignRelSize(PlannerInfo *root,
 	    {
 		OpExpr *op = (OpExpr *) info->clause;
 		Node *left, *right;
-		Index varattno;
 
 		if (list_length(op->args) != 2)
 		    break;
@@ -692,8 +692,6 @@ static void ktGetForeignRelSize(PlannerInfo *root,
 
 		if (!IsA(left, Var))
 		    break;
-
-		varattno = ((Var *) left)->varattno;
 
 		right = list_nth(op->args, 1);
 
@@ -773,7 +771,8 @@ ktGetForeignPlan(PlannerInfo *root,
         Oid foreigntableid,
         ForeignPath *best_path,
         List *tlist,
-        List *scan_clauses)
+        List *scan_clauses,
+        Plan *plan)
 {
     /*
      * Create a ForeignScan plan node from the selected foreign access path.
@@ -1303,7 +1302,7 @@ ktExecForeignInsert(EState *estate,
     } else {
       if(!ktaddl(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ,
                             VARDATA(bval), VARSIZE(bval) - VARHDRSZ)) {
-          elog(ERROR, "%d, Error from kt: %s", ktgeterror(fmstate->db));
+          elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
         }
     }
 

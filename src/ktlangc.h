@@ -79,6 +79,7 @@ bool ktreplace(KTDB*db, const char * key, const char * value);
 bool ktreplacel(KTDB*db, const char * key, size_t keylen, const char * value, size_t vallen);
 bool ktremove(KTDB*db, const char * key);
 bool ktremovel(KTDB*db, const char * key, size_t keylen);
+bool ktsetl(KTDB*db, const char * key, size_t keylen, const char * value, size_t vallen);
 
 const char *ktgeterror(KTDB* db);
 const char *ktgeterrormsg(KTDB* db);
