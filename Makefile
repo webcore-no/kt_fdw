@@ -28,12 +28,12 @@ REGRESS_OPTS  = --inputdir=test --outputdir=test \
 
 MODULE_big    = $(EXTENSION)
 OBJS          = $(patsubst %.c, %.o, $(wildcard src/*.c)) src/ktlangc.o
-PG_CONFIG     = pg_config
+PG_CONFIG    ?= pg_config
 SHLIB_LINK    = -lkyototycoon -lsasl2 -lkyotocabinet
 
 CXXFLAGS      = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 \
                 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter \
-		-DUSE_TRANSACTIONS 
+                -DUSE_TRANSACTIONS 
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
 
