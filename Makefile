@@ -33,7 +33,7 @@ SHLIB_LINK    = -lkyototycoon -lsasl2 -lkyotocabinet
 
 CXXFLAGS      = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 \
                 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter \
-                -DUSE_TRANSACTIONS
+                -DUSE_TRANSACTIONS -O -Wexstra -Werror
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
 
