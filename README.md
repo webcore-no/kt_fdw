@@ -38,7 +38,7 @@ Makes insert overwrite existing keys in kyototycoon.
 ## Usage:
 ```pgsql
 CREATE SERVER <server name> FOREIGN DATA WRAPPER kt_fdw OPTIONS
-(host '127.0.0.1', port '1978', timeout '-1');
+(host '127.0.0.1', port '1978', timeout '-1', reconnect_timeout '1000');
 (the above options are the defaults)
 
 CREATE USER MAPPING FOR PUBLIC SERVER kt_server;

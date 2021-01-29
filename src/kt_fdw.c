@@ -15,6 +15,8 @@
  */
 
 #include "postgres.h"
+#include <stdint.h>
+#include <sys/time.h>
 #if PG_VERSION_NUM >= 130000
 #include "common/hashfn.h"
 #endif
@@ -178,6 +180,7 @@ static struct ktFdwOption valid_options[] =
     {"host", ForeignServerRelationId},
     {"port", ForeignServerRelationId},
     {"timeout", ForeignServerRelationId},
+    {"reconnect_timeout", ForeignServerRelationId},
     /* Sentinel */
     {NULL, InvalidOid}
 };
@@ -188,6 +191,7 @@ typedef struct ktTableOptions
     char *host;
     int32_t port;
     double timeout;
+    uint64_t reconnect_timeout;
     Oid serverId;
     Oid userId;
 } ktTableOptions;
@@ -229,6 +233,7 @@ typedef struct {
   KtConnCacheKey key;
   KTDB* db;
   int xact_depth;
+  uint64_t creation_time;
 } KtConnCacheEntry;
 
 static HTAB *ConnectionHash = NULL;
@@ -361,7 +366,7 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
 
  KTDB * GetKtConnection(struct ktTableOptions *table_options)
  {
-   bool        found;
+    bool        found;
     KtConnCacheEntry *entry;
     KtConnCacheKey key;
 
@@ -393,22 +398,39 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
      * Find or create cached entry for requested connection.
      */
     entry = hash_search(ConnectionHash, &key, HASH_ENTER, &found);
+
     if (!found)
     {
         /* initialize new hashtable entry (key is already filled in) */
         entry->db = NULL;
+        entry->creation_time = 0;
         entry->xact_depth = 0;
     }
 
     if (entry->db == NULL)
     {
-        entry->db = ktdbnew();
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        uint64_t now = (uint64_t)tv.tv_sec * 1000  + (uint64_t)tv.tv_usec / 1000;
 
-        if(!entry->db)
-            elog(ERROR, "could not allocate memory for ktdb");
+        if(entry->creation_time + table_options->reconnect_timeout < now) {
+            entry->creation_time = now;
+            entry->db = ktdbnew();
 
-        if(!ktdbopen(entry->db, table_options->host, table_options->port, table_options->timeout))
-            elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
+            if(!entry->db)
+                elog(ERROR, "could not allocate memory for ktdb");
+
+            if(!ktdbopen(entry->db, table_options->host,
+                  table_options->port, table_options->timeout)) {
+                char *error = ktgeterror(entry->db);
+                char *error_msg = ktgeterrormsg(entry->db);
+                ktdbdel(entry->db);
+                entry->db = NULL;
+                elog(ERROR,"Could not open connection to KT: %s", error);
+            }
+        } else {
+          elog(ERROR,"Open connection to KT: Retry connection timeout");
+        }
     }
 
 #ifdef USE_TRANSACTIONS
@@ -431,6 +453,7 @@ void initTableOptions(struct ktTableOptions *table_options)
     table_options->host = NULL;
     table_options->port = 0;
     table_options->timeout = 0;
+    table_options->reconnect_timeout = 0;
 }
 
     static void
@@ -474,10 +497,13 @@ getTableOptions(Oid foreigntableid,struct ktTableOptions *table_options)
             table_options->host = defGetString(def);
 
         if (strcmp(def->defname, "port") == 0)
-            table_options->port = atoi(defGetString(def));
+          table_options->port = atoi(defGetString(def));
 
         if (strcmp(def->defname, "timeout") == 0)
             table_options->timeout = atoi(defGetString(def));
+
+        if (strcmp(def->defname, "reconnect_timeout") == 0)
+            table_options->reconnect_timeout = atoi(defGetString(def));
     }
 
     /* Default values, if required */
@@ -487,6 +513,8 @@ getTableOptions(Oid foreigntableid,struct ktTableOptions *table_options)
         table_options->port = 1978;
     if(!table_options->timeout)
         table_options->timeout = -1; //no timeout
+    if(!table_options->reconnect_timeout)
+        table_options->reconnect_timeout = 1000; // One secound timeout
 }
 
 
@@ -569,6 +597,16 @@ kt_fdw_validator(PG_FUNCTION_ARGS)
                             ));
 
             table_options.timeout = atoi(defGetString(def));
+        }
+        if(strcmp(def->defname, "reconnect_timeout") == 0)
+        {
+            if (table_options.reconnect_timeout)
+                ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+                            errmsg("conflicting or redundant options: "
+                                "reconnect_timeout (%s)", defGetString(def))
+                            ));
+
+            table_options.reconnect_timeout = atoi(defGetString(def));
         }
     }
 
