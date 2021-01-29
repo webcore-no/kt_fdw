@@ -1,0 +1,7 @@
+**/*.o
+**/*.bc
+*.so
+tags
+test/*.diffs
+test/*.out
+test/results
