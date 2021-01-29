@@ -422,8 +422,8 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
 
             if(!ktdbopen(entry->db, table_options->host,
                   table_options->port, table_options->timeout)) {
-                char *error = ktgeterror(entry->db);
-                char *error_msg = ktgeterrormsg(entry->db);
+                const char *error = ktgeterror(entry->db);
+                const char *error_msg = ktgeterrormsg(entry->db);
                 ktdbdel(entry->db);
                 entry->db = NULL;
                 elog(ERROR,"Could not open connection to KT: %s", error);
