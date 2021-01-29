@@ -74,7 +74,7 @@ int64_t ktdbcount(KTDB *db)
 KTCUR *get_cursor(KTDB *db)
 {
 	_assert_(db);
-	RemoteDB *        pdb = (RemoteDB *)db;
+	RemoteDB *pdb         = (RemoteDB *)db;
 	RemoteDB::Cursor *cur = pdb->cursor();
 	cur->jump();
 	return (KTCUR *)cur;
@@ -93,7 +93,7 @@ bool next(KTDB *db, KTCUR *cur, char **key, char **value)
 	std::string sval;
 
 	RemoteDB::Cursor *rcur = (RemoteDB::Cursor *)cur;
-	bool              res  = rcur->get(&skey, &sval, NULL, true);
+	bool res               = rcur->get(&skey, &sval, NULL, true);
 	if(!res) return false;
 
 	*key   = (char *)palloc(sizeof(char) * (skey.length() + 1));
@@ -104,18 +104,18 @@ bool next(KTDB *db, KTCUR *cur, char **key, char **value)
 	return true;
 }
 
-bool nextl(KTDB *  db,
-           KTCUR * cur,
-           char ** key,
+bool nextl(KTDB *db,
+           KTCUR *cur,
+           char **key,
            size_t *key_len,
-           char ** value,
+           char **value,
            size_t *val_len)
 {
 	std::string skey;
 	std::string sval;
 
 	RemoteDB::Cursor *rcur = (RemoteDB::Cursor *)cur;
-	bool              res  = rcur->get(&skey, &sval, NULL, true);
+	bool res               = rcur->get(&skey, &sval, NULL, true);
 	if(!res) return false;
 
 	*key     = (char *)palloc(sizeof(char) * (skey.length() + 1));
@@ -137,7 +137,7 @@ bool ktget(KTDB *db, char *key, char **value)
 
 	std::string skey(key);
 	std::string sval;
-	RemoteDB *  pdb = (RemoteDB *)db;
+	RemoteDB *pdb = (RemoteDB *)db;
 
 	if(!pdb->get(skey, &sval)) return false;
 
@@ -153,7 +153,7 @@ bool ktgetl(KTDB *db, char *key, size_t *key_len, char **value, size_t *val_len)
 
 	std::string skey(key);
 	std::string sval;
-	RemoteDB *  pdb = (RemoteDB *)db;
+	RemoteDB *pdb = (RemoteDB *)db;
 
 	if(!pdb->get(skey, &sval)) return false;
 
@@ -175,11 +175,11 @@ bool ktadd(KTDB *db, const char *key, const char *value)
 	return pdb->add(skey, sval);
 }
 
-bool ktaddl(KTDB *      db,
+bool ktaddl(KTDB *db,
             const char *key,
-            size_t      keylen,
+            size_t keylen,
             const char *value,
-            size_t      vallen)
+            size_t vallen)
 {
 	_assert_(db);
 	RemoteDB *pdb = (RemoteDB *)db;
@@ -198,11 +198,11 @@ bool ktreplace(KTDB *db, const char *key, const char *value)
 	return pdb->replace(skey, sval);
 }
 
-bool ktreplacel(KTDB *      db,
+bool ktreplacel(KTDB *db,
                 const char *key,
-                size_t      keylen,
+                size_t keylen,
                 const char *value,
-                size_t      vallen)
+                size_t vallen)
 {
 	_assert_(db);
 	RemoteDB *pdb = (RemoteDB *)db;
@@ -210,11 +210,11 @@ bool ktreplacel(KTDB *      db,
 	return pdb->replace(key, keylen, value, vallen);
 }
 
-bool ktsetl(KTDB *      db,
+bool ktsetl(KTDB *db,
             const char *key,
-            size_t      keylen,
+            size_t keylen,
             const char *value,
-            size_t      vallen)
+            size_t vallen)
 {
 	_assert_(db);
 	RemoteDB *pdb = (RemoteDB *)db;
@@ -257,7 +257,7 @@ const char *ktgeterrormsg(KTDB *db)
 bool ktbegin_transaction(KTDB *db)
 {
 	_assert_(db);
-	RemoteDB *                         pdb = (RemoteDB *)db;
+	RemoteDB *pdb = (RemoteDB *)db;
 	std::map<std::string, std::string> in;
 	std::map<std::string, std::string> out;
 	return pdb->play_script("ktfdwbegintransaction", in, &out);
@@ -266,7 +266,7 @@ bool ktbegin_transaction(KTDB *db)
 bool ktcommit(KTDB *db)
 {
 	_assert_(db);
-	RemoteDB *                         pdb = (RemoteDB *)db;
+	RemoteDB *pdb = (RemoteDB *)db;
 	std::map<std::string, std::string> in;
 	std::map<std::string, std::string> out;
 	return pdb->play_script("ktfdwcommit", in, &out);
@@ -275,7 +275,7 @@ bool ktcommit(KTDB *db)
 bool ktabort(KTDB *db)
 {
 	_assert_(db);
-	RemoteDB *                         pdb = (RemoteDB *)db;
+	RemoteDB *pdb = (RemoteDB *)db;
 	std::map<std::string, std::string> in;
 	std::map<std::string, std::string> out;
 	return pdb->play_script("ktfdwabort", in, &out);
