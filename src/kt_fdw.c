@@ -1271,6 +1271,12 @@ static void ktBeginForeignModify(ModifyTableState *mtstate,
 	rinfo->ri_FdwState = fmstate;
 }
 
+enum kt_flag {
+	NONE,
+	SET,
+	APPEND
+};
+
 static TupleTableSlot *ktExecForeignInsert(EState *estate,
                                            ResultRelInfo *rinfo,
                                            TupleTableSlot *slot,
@@ -1305,50 +1311,69 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 
 	Datum value;
 	bool isnull;
-	bool isSet = false;
+	enum kt_flag flag  = NONE;
+	bool isDelete = false;
 	bytea *bkey, *bval, *sval;
 	KtFdwModifyState *fmstate = (KtFdwModifyState *)rinfo->ri_FdwState;
 
 	elog(DEBUG1, "entering function %s", __func__);
 
 	value = slot_getattr(planSlot, 1, &isnull);
-	if(isnull) elog(ERROR, "can't get key value");
+	if(isnull) { elog(ERROR, "can't get key value"); }
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
 
 	value = slot_getattr(planSlot, 2, &isnull);
-	if(isnull) elog(ERROR, "can't get value value");
-
-	bval = SendFunctionCall(fmstate->value_info, value);
+	if(isnull) { isDelete = true; } else {
+		bval = SendFunctionCall(fmstate->value_info, value);
+	}
 
 	value = slot_getattr(planSlot, 3, &isnull);
 	if(!isnull) {
 		sval = SendFunctionCall(fmstate->flags_info, value);
 		if(memcmp(VARDATA(sval), "kt_set", VARSIZE(sval) - VARHDRSZ) ==
 		   0) {
-			isSet = true;
+			flag = SET;
+		} else if(memcmp(VARDATA(sval), "kt_append", VARSIZE(sval) - VARHDRSZ) == 0) {
+			flag = APPEND;
 		}
 	}
-	if(isSet) {
-		if(!ktsetl(fmstate->db,
-		           VARDATA(bkey),
-		           VARSIZE(bkey) - VARHDRSZ,
-		           VARDATA(bval),
-		           VARSIZE(bval) - VARHDRSZ)) {
-			elog(ERROR,
-			     "Error from kt: %s",
-			     ktgeterror(fmstate->db));
-		}
-	} else {
-		if(!ktaddl(fmstate->db,
-		           VARDATA(bkey),
-		           VARSIZE(bkey) - VARHDRSZ,
-		           VARDATA(bval),
-		           VARSIZE(bval) - VARHDRSZ)) {
-			elog(ERROR,
-			     "Error from kt: %s",
-			     ktgeterror(fmstate->db));
-		}
+	switch(flag) {
+		case SET: {
+			if(isDelete) {
+				if(!ktremovel(fmstate->db,
+				              VARDATA(bkey),
+				              VARSIZE(bkey) - VARHDRSZ)) {
+					elog(ERROR,
+					     "Error from kt: %s",
+					     ktgeterror(fmstate->db));
+				}
+			} else if(!ktsetl(fmstate->db,
+			                  VARDATA(bkey),
+			                  VARSIZE(bkey) - VARHDRSZ,
+			                  VARDATA(bval),
+			                  VARSIZE(bval) - VARHDRSZ)) {
+				elog(ERROR,
+				     "Error from kt: %s",
+				     ktgeterror(fmstate->db));
+			}
+		} break;
+		case NONE:
+		default: {
+			if(isDelete) {
+				elog(ERROR,
+				     "value is null without 'kt_set' flag");
+			}
+			if(!ktaddl(fmstate->db,
+			           VARDATA(bkey),
+			           VARSIZE(bkey) - VARHDRSZ,
+			           VARDATA(bval),
+			           VARSIZE(bval) - VARHDRSZ)) {
+				elog(ERROR,
+				     "Error from kt: %s",
+				     ktgeterror(fmstate->db));
+			}
+		} break;
 	}
 
 	return slot;
@@ -1553,8 +1578,8 @@ static bool ktAnalyzeForeignTable(Relation relation,
 	 *
 	 *	  int
 	 *	  AcquireSampleRowsFunc (Relation relation, int elevel,
-	 *							 HeapTuple *rows,
-	 *int targrows, double *totalrows, double *totaldeadrows);
+	 *							 HeapTuple
+	 **rows, int targrows, double *totalrows, double *totaldeadrows);
 	 *
 	 * A random sample of up to targrows rows should be collected from the
 	 * table and stored into the caller-provided rows array. The actual
