@@ -311,11 +311,11 @@ static bool _handleErrors(const char *file,
 		case 6:// Network error
 			_ktelogdb(NOTICE, file, func, line, db);
 			entry = GetConnCacheEntry(table_options);
+			ktdbdel(entry->db);
+			entry->db = NULL;
 			if(KtOpenConnection(entry, table_options)) {
 				return true;
 			}
-			ktdbdel(entry->db);
-			entry->db = NULL;
 			_ktelogdb(ERROR, file, func, line, db);
 			break;
 		default: ktelogdb(ERROR, db); break;
@@ -489,6 +489,7 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 			             table_options->host,
 			             table_options->port,
 			             table_options->timeout)) {
+				ktdbdel(entry->db);
 				entry->db = NULL;
 				return false;
 			}
