@@ -247,11 +247,14 @@ const char *ktgeterror(KTDB *db)
 	return pdb->error().name();
 }
 
+char buffer[512];
 const char *ktgeterrormsg(KTDB *db)
 {
 	_assert_(db);
-	RemoteDB *pdb = (RemoteDB *)db;
-	return pdb->error().message();
+	RemoteDB *pdb   = (RemoteDB *)db;
+	auto err        = pdb->error();
+	const char *msg = strncpy(buffer, err.message(), 511);
+	return msg;
 }
 
 bool ktbegin_transaction(KTDB *db)

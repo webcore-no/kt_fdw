@@ -412,10 +412,10 @@ KTDB *GetKtConnection(struct ktTableOptions *table_options)
 	}
 
 	if(entry->db == NULL) {
+		int64_t now;
 		struct timeval tv;
 		gettimeofday(&tv, NULL);
-		uint64_t now = (uint64_t)tv.tv_sec * 1000 +
-		               (uint64_t)tv.tv_usec / 1000;
+		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
 		if(table_options->reconnect_timeout != -1 &&
 		   entry->creation_time + table_options->reconnect_timeout <
@@ -431,17 +431,14 @@ KTDB *GetKtConnection(struct ktTableOptions *table_options)
 			             table_options->host,
 			             table_options->port,
 			             table_options->timeout)) {
-				const char *error = ktgeterror(entry->db);
-				char buffer[512];
-				strncpy(buffer, ktgeterrormsg(entry->db), 512);
-				// const char *error_msg =
-				// ktgeterrormsg(entry->db);
-
+				const char *error  = ktgeterror(entry->db);
+				const char *errmsg = ktgeterrormsg(entry->db);
 				ktdbdel(entry->db);
 				entry->db = NULL;
 				elog(ERROR,
-				     "Could not open connection to KT: %s",
-				     error);
+				     "Could not open connection to KT: %s %s",
+				     error,
+				     errmsg);
 			}
 		} else {
 			elog(ERROR,
@@ -1271,11 +1268,7 @@ static void ktBeginForeignModify(ModifyTableState *mtstate,
 	rinfo->ri_FdwState = fmstate;
 }
 
-enum kt_flag {
-	NONE,
-	SET,
-	APPEND
-};
+enum kt_flag { NONE, SET, APPEND };
 
 static TupleTableSlot *ktExecForeignInsert(EState *estate,
                                            ResultRelInfo *rinfo,
@@ -1311,9 +1304,9 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 
 	Datum value;
 	bool isnull;
-	enum kt_flag flag  = NONE;
-	bool isDelete = false;
-	bytea *bkey, *bval, *sval;
+	enum kt_flag flag = NONE;
+	bool isDelete     = false;
+	bytea *bkey, *bval = NULL, *sval;
 	KtFdwModifyState *fmstate = (KtFdwModifyState *)rinfo->ri_FdwState;
 
 	elog(DEBUG1, "entering function %s", __func__);
@@ -1324,7 +1317,9 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 	bkey = SendFunctionCall(fmstate->key_info, value);
 
 	value = slot_getattr(planSlot, 2, &isnull);
-	if(isnull) { isDelete = true; } else {
+	if(isnull) {
+		isDelete = true;
+	} else {
 		bval = SendFunctionCall(fmstate->value_info, value);
 	}
 
@@ -1334,7 +1329,9 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 		if(memcmp(VARDATA(sval), "kt_set", VARSIZE(sval) - VARHDRSZ) ==
 		   0) {
 			flag = SET;
-		} else if(memcmp(VARDATA(sval), "kt_append", VARSIZE(sval) - VARHDRSZ) == 0) {
+		} else if(memcmp(VARDATA(sval),
+		                 "kt_append",
+		                 VARSIZE(sval) - VARHDRSZ) == 0) {
 			flag = APPEND;
 		}
 	}
@@ -1344,9 +1341,17 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 				if(!ktremovel(fmstate->db,
 				              VARDATA(bkey),
 				              VARSIZE(bkey) - VARHDRSZ)) {
-					elog(ERROR,
-					     "Error from kt: %s",
-					     ktgeterror(fmstate->db));
+					const char *err_msg =
+					        ktgeterrormsg(fmstate->db);
+					if(strcmp(err_msg,
+					          "DB: 7: no record: no "
+					          "record") != 0) {
+						elog(ERROR,
+						     "Error from ktremovel: %s "
+						     "%s",
+						     ktgeterror(fmstate->db),
+						     err_msg);
+					}
 				}
 			} else if(!ktsetl(fmstate->db,
 			                  VARDATA(bkey),
