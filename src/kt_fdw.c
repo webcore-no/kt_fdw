@@ -281,8 +281,14 @@ static KtConnCacheEntry *GetConnCacheEntry(
         struct ktTableOptions *table_options);
 
 #define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
+
+#ifdef KTLOGVERBOSE
 #define _ktelog(type, file, func, line, fmt, ...) \
 	elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
+#else
+#define _ktelog(type, file, func, line, fmt, ...) \
+	elog(type, fmt, ##__VA_ARGS__)
+#endif
 
 #define handleErrors(db, table_options) \
 	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
