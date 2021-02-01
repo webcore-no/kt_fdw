@@ -51,3 +51,4 @@ Now you can Select, Update, Delete and Insert!
 - [ ] Give the user the option not to use flags
 - [ ] Support more flags
 - [ ] Write new tests
+- [ ] Make sure transactions fail on connection loss

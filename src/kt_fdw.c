@@ -287,6 +287,15 @@ static KtConnCacheEntry *GetConnCacheEntry(
 #define handleErrors(db, table_options) \
 	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
 
+
+#define ktelogdb(type, db) _ktelog(type, __FILE__, __func__, __LINE__, args)
+static void _ktelogdb(type, file, func, line, db) {
+	const int err_num   = ktgeterrornum(db);
+	const char *name    = ktgeterror(db);
+	const char *message = ktgeterrormsg(db);
+	_ktelog(type, file, func, line, "[%s(%d)]:%s", name, err_num, message);
+}
+
 static bool _handleErrors(const char *file,
                           const char *func,
                           const int line,
@@ -295,44 +304,21 @@ static bool _handleErrors(const char *file,
 {
 	KtConnCacheEntry *entry;
 	const int err_num   = ktgeterrornum(db);
-	const char *name    = ktgeterror(db);
-	const char *message = ktgeterrormsg(db);
 	// Always log non-fatal errors
-	_ktelog(NOTICE,
-	        file,
-	        func,
-	        line,
-	        "[%s(%d)]:%s",
-	        name,
-	        err_num,
-	        message);
 
 	switch(err_num) {
 		case 6:// Network error
+			ktelogdb(NOTICE, db);
 			entry = GetConnCacheEntry(table_options);
 			if(KtOpenConnection(entry, table_options)) {
 				return true;
 			}
 			ktdbdel(entry->db);
 			entry->db = NULL;
-			_ktelog(ERROR,
-			        file,
-			        func,
-			        line,
-			        "[%s(%d)]:%s",
-			        name,
-			        err_num,
-			        message);
+			ktelogdb(ERROR, db);
 			break;
 		default:
-			_ktelog(ERROR,
-			        file,
-			        func,
-			        line,
-			        "[%s(%d)]:%s",
-			        name,
-			        err_num,
-			        message);
+			ktelogdb(ERROR, db);
 			break;
 	}
 	return false;
@@ -367,16 +353,11 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 	hash_seq_init(&scan, ConnectionHash);
 	while((entry = (KtConnCacheEntry *)hash_seq_search(&scan))) {
 		if(entry->db == NULL || entry->xact_depth == 0) continue;
-	RETRY:
 		switch(event) {
 			case XACT_EVENT_PRE_COMMIT:
 			case XACT_EVENT_PARALLEL_PRE_COMMIT:
 				if(!ktcommit(entry->db)) {
-					if(handleErrors(fmstate->db,
-					                &fmstate->opt)) {
-						// Replay
-						goto RETRY;
-					}
+					ktelogdb(ERROR, db);
 				}
 				break;
 			case XACT_EVENT_PRE_PREPARE:
@@ -398,11 +379,9 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 			case XACT_EVENT_ABORT:
 			case XACT_EVENT_PARALLEL_ABORT:
 				if(!ktabort(entry->db))
-					if(handleErrors(fmstate->db,
-					                &fmstate->opt)) {
-						// Replay
-						goto RETRY;
-					}
+				{
+					ktelogdb(ERROR, db);
+				}
 				break;
 		}
 		entry->xact_depth = 0;
