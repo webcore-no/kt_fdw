@@ -287,9 +287,10 @@ static KtConnCacheEntry *GetConnCacheEntry(
 #define handleErrors(db, table_options) \
 	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
 
-
-#define ktelogdb(type, db) _ktelog(type, __FILE__, __func__, __LINE__, args)
-static void _ktelogdb(type, file, func, line, db) {
+#define ktelogdb(type, db) _ktelogdb(type, __FILE__, __func__, __LINE__, db)
+static void _ktelogdb(
+        int type, const char *file, const char *func, int line, KTDB *db)
+{
 	const int err_num   = ktgeterrornum(db);
 	const char *name    = ktgeterror(db);
 	const char *message = ktgeterrormsg(db);
@@ -303,7 +304,7 @@ static bool _handleErrors(const char *file,
                           struct ktTableOptions *table_options)
 {
 	KtConnCacheEntry *entry;
-	const int err_num   = ktgeterrornum(db);
+	const int err_num = ktgeterrornum(db);
 	// Always log non-fatal errors
 
 	switch(err_num) {
@@ -317,9 +318,7 @@ static bool _handleErrors(const char *file,
 			entry->db = NULL;
 			ktelogdb(ERROR, db);
 			break;
-		default:
-			ktelogdb(ERROR, db);
-			break;
+		default: ktelogdb(ERROR, db); break;
 	}
 	return false;
 }
@@ -378,10 +377,7 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 				break;
 			case XACT_EVENT_ABORT:
 			case XACT_EVENT_PARALLEL_ABORT:
-				if(!ktabort(entry->db))
-				{
-					ktelogdb(ERROR, db);
-				}
+				if(!ktabort(entry->db)) { ktelogdb(ERROR, db); }
 				break;
 		}
 		entry->xact_depth = 0;
@@ -397,16 +393,21 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry)
 	                                         // be less than 1;
 
 	if(curlevel < 1)// I dont get something
+	{
 		elog(ERROR,
 		     "Transaction level should not be less than one");// I don't
 		                                                      // understand
+	}
 
 	if(curlevel > 1)// kt does not support savepoints
+	{
 		ereport(ERROR,
 		        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 		         errmsg("Kyoto Tycoon does not support savepoints")));
+	}
 
 	if(entry->xact_depth < curlevel) {
+	RETRY:
 		if(!ktbegin_transaction(entry->db)) {
 			if(handleErrors(fmstate->db, &fmstate->opt)) {
 				// Replay
@@ -1397,7 +1398,10 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 			flag = APPEND;
 		}
 	}
+
+#ifndef USE_TRANSACTIONS
 RETRY:
+#endif
 	switch(flag) {
 		case SET: {
 			if(isDelete) {
@@ -1409,12 +1413,16 @@ RETRY:
 					if(strcmp(err_msg,
 					          "DB: 7: no record: no "
 					          "record") != 0) {
+#ifdef USE_TRANSACTIONS
+						ktelogdb(ERROR, db);
+#else
 						if(handleErrors(
 						           fmstate->db,
 						           &fmstate->opt)) {
 							// Replay
 							goto RETRY;
 						}
+#endif
 					}
 				}
 			} else if(!ktsetl(fmstate->db,
@@ -1422,10 +1430,14 @@ RETRY:
 			                  VARSIZE(bkey) - VARHDRSZ,
 			                  VARDATA(bval),
 			                  VARSIZE(bval) - VARHDRSZ)) {
+#ifdef USE_TRANSACTIONS
+				ktelogdb(ERROR, db);
+#else
 				if(handleErrors(fmstate->db, &fmstate->opt)) {
 					// Replay
 					goto RETRY;
 				}
+#endif
 			}
 		} break;
 		case NONE:
@@ -1440,10 +1452,14 @@ RETRY:
 			           VARSIZE(bkey) - VARHDRSZ,
 			           VARDATA(bval),
 			           VARSIZE(bval) - VARHDRSZ)) {
+#ifdef USE_TRANSACTIONS
+				ktelogdb(ERROR, db);
+#else
 				if(handleErrors(fmstate->db, &fmstate->opt)) {
 					// Replay
 					goto RETRY;
 				}
+#endif
 			}
 		} break;
 	}
@@ -1510,17 +1526,22 @@ static TupleTableSlot *ktExecForeignUpdate(EState *estate,
 	if(isnull) elog(ERROR, "can't get value value");
 
 	bval = SendFunctionCall(fmstate->value_info, value);
-
+#ifndef USE_TRANSACTIONS
 RETRY:
+#endif
 	if(!ktreplacel(fmstate->db,
 	               VARDATA(bkey),
 	               VARSIZE(bkey) - VARHDRSZ,
 	               VARDATA(bval),
 	               VARSIZE(bval) - VARHDRSZ)) {
+#ifdef USE_TRANSACTIONS
+		ktelogdb(ERROR, db);
+#else
 		if(handleErrors(fmstate->db, &fmstate->opt)) {
 			// Replay
 			goto RETRY;
 		}
+#endif
 	}
 
 	return slot;
@@ -1567,12 +1588,18 @@ static TupleTableSlot *ktExecForeignDelete(EState *estate,
 	if(isnull) elog(ERROR, "can't get key value");
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
+#ifndef USE_TRANSACTIONS
 RETRY:
+#endif
 	if(!ktremovel(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ)) {
+#ifdef USE_TRANSACTIONS
+		ktelogdb(ERROR, db);
+#else
 		if(handleErrors(fmstate->db, &fmstate->opt)) {
 			// Replay
 			goto RETRY;
 		}
+#endif
 	}
 
 	return slot;
