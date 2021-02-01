@@ -101,6 +101,7 @@ bool ktsetl(KTDB *      db,
             size_t      vallen);
 
 const char *ktgeterror(KTDB *db);
+const int ktgeterrornum(KTDB *db);
 const char *ktgeterrormsg(KTDB *db);
 
 bool ktbegin_transaction(KTDB *db);

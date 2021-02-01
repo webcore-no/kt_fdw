@@ -270,6 +270,74 @@ Datum kt_fdw_handler(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(fdwroutine);
 }
 
+typedef struct {
+	const char *name;
+	const char *message;
+} ktErrorMessage;
+
+static bool KtOpenConnection(KtConnCacheEntry *entry,
+                             struct ktTableOptions *table_options);
+static KtConnCacheEntry *GetConnCacheEntry(
+        struct ktTableOptions *table_options);
+
+#define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
+#define _ktelog(type, file, func, line, fmt, ...) \
+	elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
+
+#define handleErrors(db, table_options) \
+	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
+
+static bool _handleErrors(const char *file,
+                          const char *func,
+                          const int line,
+                          KTDB *db,
+                          struct ktTableOptions *table_options)
+{
+	KtConnCacheEntry *entry;
+	const int err_num   = ktgeterrornum(db);
+	const char *name    = ktgeterror(db);
+	const char *message = ktgeterrormsg(db);
+	// Always log non-fatal errors
+	_ktelog(NOTICE,
+	        file,
+	        func,
+	        line,
+	        "[%s(%d)]:%s",
+	        name,
+	        err_num,
+	        message);
+
+	switch(err_num) {
+		case 6:// Network error
+			entry = GetConnCacheEntry(table_options);
+			if(KtOpenConnection(entry, table_options)) {
+				return true;
+			}
+			ktdbdel(entry->db);
+			entry->db = NULL;
+			_ktelog(ERROR,
+			        file,
+			        func,
+			        line,
+			        "[%s(%d)]:%s",
+			        name,
+			        err_num,
+			        message);
+			break;
+		default:
+			_ktelog(ERROR,
+			        file,
+			        func,
+			        line,
+			        "[%s(%d)]:%s",
+			        name,
+			        err_num,
+			        message);
+			break;
+	}
+	return false;
+}
+
 static bool isValidOption(const char *option, Oid context)
 {
 	struct ktFdwOption *opt;
@@ -299,15 +367,17 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 	hash_seq_init(&scan, ConnectionHash);
 	while((entry = (KtConnCacheEntry *)hash_seq_search(&scan))) {
 		if(entry->db == NULL || entry->xact_depth == 0) continue;
-
+	RETRY:
 		switch(event) {
 			case XACT_EVENT_PRE_COMMIT:
 			case XACT_EVENT_PARALLEL_PRE_COMMIT:
-				if(!ktcommit(entry->db))
-					elog(ERROR,
-					     "Could not commit to KT %s %s",
-					     ktgeterror(entry->db),
-					     ktgeterrormsg(entry->db));
+				if(!ktcommit(entry->db)) {
+					if(handleErrors(fmstate->db,
+					                &fmstate->opt)) {
+						// Replay
+						goto RETRY;
+					}
+				}
 				break;
 			case XACT_EVENT_PRE_PREPARE:
 				ereport(ERROR,
@@ -328,10 +398,11 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 			case XACT_EVENT_ABORT:
 			case XACT_EVENT_PARALLEL_ABORT:
 				if(!ktabort(entry->db))
-					elog(ERROR,
-					     "Could not abort from KT %s %s",
-					     ktgeterror(entry->db),
-					     ktgeterrormsg(entry->db));
+					if(handleErrors(fmstate->db,
+					                &fmstate->opt)) {
+						// Replay
+						goto RETRY;
+					}
 				break;
 		}
 		entry->xact_depth = 0;
@@ -357,22 +428,23 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry)
 		         errmsg("Kyoto Tycoon does not support savepoints")));
 
 	if(entry->xact_depth < curlevel) {
-		if(!ktbegin_transaction(entry->db))
-			elog(ERROR,
-			     "Could not begin transaction from KT %s %s",
-			     ktgeterror(entry->db),
-			     ktgeterrormsg(entry->db));
+		if(!ktbegin_transaction(entry->db)) {
+			if(handleErrors(fmstate->db, &fmstate->opt)) {
+				// Replay
+				goto RETRY;
+			}
+		}
 		entry->xact_depth   = curlevel;// 1
 		xact_got_connection = true;
 	}
 }
 #endif
 
-KTDB *GetKtConnection(struct ktTableOptions *table_options)
+static KtConnCacheEntry *GetConnCacheEntry(struct ktTableOptions *table_options)
 {
 	bool found;
-	KtConnCacheEntry *entry;
 	KtConnCacheKey key;
+	KtConnCacheEntry *entry;
 
 	/* First time through, initialize connection cache hashtable */
 	if(ConnectionHash == NULL) {
@@ -410,7 +482,12 @@ KTDB *GetKtConnection(struct ktTableOptions *table_options)
 		entry->creation_time = 0;
 		entry->xact_depth    = 0;
 	}
+	return entry;
+}
 
+static bool KtOpenConnection(KtConnCacheEntry *entry,
+                             struct ktTableOptions *table_options)
+{
 	if(entry->db == NULL) {
 		int64_t now;
 		struct timeval tv;
@@ -423,27 +500,33 @@ KTDB *GetKtConnection(struct ktTableOptions *table_options)
 			entry->creation_time = now;
 			entry->db            = ktdbnew();
 
-			if(!entry->db)
+			if(!entry->db) {
 				elog(ERROR,
 				     "could not allocate memory for ktdb");
+			}
 
 			if(!ktdbopen(entry->db,
 			             table_options->host,
 			             table_options->port,
 			             table_options->timeout)) {
-				const char *error  = ktgeterror(entry->db);
-				const char *errmsg = ktgeterrormsg(entry->db);
-				ktdbdel(entry->db);
 				entry->db = NULL;
-				elog(ERROR,
-				     "Could not open connection to KT: %s %s",
-				     error,
-				     errmsg);
+				return false;
 			}
 		} else {
-			elog(ERROR,
-			     "Open connection to KT: Retry connection timeout");
+			return false;
 		}
+	}
+	return true;
+}
+
+KTDB *GetKtConnection(struct ktTableOptions *table_options)
+{
+	KtConnCacheEntry *entry = GetConnCacheEntry(table_options);
+	if(!KtOpenConnection(entry, table_options)) {
+		ktelog(ERROR,
+		       "Failed to connect to %s:%d",
+		       table_options->host,
+		       table_options->port);
 	}
 
 #ifdef USE_TRANSACTIONS
@@ -1335,6 +1418,7 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 			flag = APPEND;
 		}
 	}
+RETRY:
 	switch(flag) {
 		case SET: {
 			if(isDelete) {
@@ -1346,11 +1430,12 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 					if(strcmp(err_msg,
 					          "DB: 7: no record: no "
 					          "record") != 0) {
-						elog(ERROR,
-						     "Error from ktremovel: %s "
-						     "%s",
-						     ktgeterror(fmstate->db),
-						     err_msg);
+						if(handleErrors(
+						           fmstate->db,
+						           &fmstate->opt)) {
+							// Replay
+							goto RETRY;
+						}
 					}
 				}
 			} else if(!ktsetl(fmstate->db,
@@ -1358,25 +1443,28 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate,
 			                  VARSIZE(bkey) - VARHDRSZ,
 			                  VARDATA(bval),
 			                  VARSIZE(bval) - VARHDRSZ)) {
-				elog(ERROR,
-				     "Error from kt: %s",
-				     ktgeterror(fmstate->db));
+				if(handleErrors(fmstate->db, &fmstate->opt)) {
+					// Replay
+					goto RETRY;
+				}
 			}
 		} break;
 		case NONE:
 		default: {
 			if(isDelete) {
-				elog(ERROR,
-				     "value is null without 'kt_set' flag");
+				ktelog(ERROR,
+				       "Value is NULL, to overwrite value use "
+				       "'kt_set' flag");
 			}
 			if(!ktaddl(fmstate->db,
 			           VARDATA(bkey),
 			           VARSIZE(bkey) - VARHDRSZ,
 			           VARDATA(bval),
 			           VARSIZE(bval) - VARHDRSZ)) {
-				elog(ERROR,
-				     "Error from kt: %s",
-				     ktgeterror(fmstate->db));
+				if(handleErrors(fmstate->db, &fmstate->opt)) {
+					// Replay
+					goto RETRY;
+				}
 			}
 		} break;
 	}
@@ -1444,12 +1532,17 @@ static TupleTableSlot *ktExecForeignUpdate(EState *estate,
 
 	bval = SendFunctionCall(fmstate->value_info, value);
 
+RETRY:
 	if(!ktreplacel(fmstate->db,
 	               VARDATA(bkey),
 	               VARSIZE(bkey) - VARHDRSZ,
 	               VARDATA(bval),
-	               VARSIZE(bval) - VARHDRSZ))
-		elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
+	               VARSIZE(bval) - VARHDRSZ)) {
+		if(handleErrors(fmstate->db, &fmstate->opt)) {
+			// Replay
+			goto RETRY;
+		}
+	}
 
 	return slot;
 }
@@ -1495,9 +1588,13 @@ static TupleTableSlot *ktExecForeignDelete(EState *estate,
 	if(isnull) elog(ERROR, "can't get key value");
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
-
-	if(!ktremovel(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ))
-		elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
+RETRY:
+	if(!ktremovel(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ)) {
+		if(handleErrors(fmstate->db, &fmstate->opt)) {
+			// Replay
+			goto RETRY;
+		}
+	}
 
 	return slot;
 }

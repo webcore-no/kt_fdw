@@ -247,6 +247,13 @@ const char *ktgeterror(KTDB *db)
 	return pdb->error().name();
 }
 
+const int ktgeterrornum(KTDB *db)
+{
+	_assert_(db);
+	RemoteDB *pdb = (RemoteDB *)db;
+	return (int)pdb->error().code();
+}
+
 char buffer[512];
 const char *ktgeterrormsg(KTDB *db)
 {
