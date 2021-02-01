@@ -309,14 +309,14 @@ static bool _handleErrors(const char *file,
 
 	switch(err_num) {
 		case 6:// Network error
-			ktelogdb(NOTICE, db);
+			_ktelogdb(NOTICE, file, func, line, db);
 			entry = GetConnCacheEntry(table_options);
 			if(KtOpenConnection(entry, table_options)) {
 				return true;
 			}
 			ktdbdel(entry->db);
 			entry->db = NULL;
-			ktelogdb(ERROR, db);
+			_ktelogdb(ERROR, file, func, line, db);
 			break;
 		default: ktelogdb(ERROR, db); break;
 	}
