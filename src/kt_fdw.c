@@ -480,9 +480,9 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 		gettimeofday(&tv, NULL);
 		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
-		if(table_options->reconnect_timeout != -1 &&
+		if(entry->creation_time == 0 || (table_options->reconnect_timeout != -1 &&
 		   entry->creation_time + table_options->reconnect_timeout <
-		           now) {
+		           now)) {
 			entry->creation_time = now;
 			entry->db            = ktdbnew();
 
