@@ -316,7 +316,7 @@ static bool _handleErrors(const char *file,
 			if(KtOpenConnection(entry, table_options)) {
 				return true;
 			}
-			_ktelogdb(ERROR, file, func, line, db);
+			_ktelog(ERROR, file, func, line, "Failed to reconnect to server %s:%d", table_options->host, table_options->port);
 			break;
 		default: ktelogdb(ERROR, db); break;
 	}
