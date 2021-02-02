@@ -46,9 +46,3 @@ CREATE USER MAPPING FOR PUBLIC SERVER kt_server;
 CREATE FOREIGN TABLE <table name> (key TEXT, value BYTEA, flags TEXT) SERVER <server name>;
 ```
 Now you can Select, Update, Delete and Insert!
-
-## TODO
-- [ ] Give the user the option not to use flags
-- [ ] Support more flags
-- [ ] Write new tests
-- [ ] Make sure transactions fail on connection loss
