@@ -233,7 +233,7 @@ void initTableOptions(struct ktTableOptions *table_options);
 KTDB *GetKtConnection(struct ktTableOptions *table_options);
 void ReleaseKtConnection(KTDB *db);
 
-Datum kt_fdw_handler(PG_FUNCTION_ARGS)
+Datum kt_fdw_handler(PG_FUNCTION_ARGS UNUSED)
 {
 	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 
