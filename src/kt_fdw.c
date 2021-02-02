@@ -333,7 +333,7 @@ static bool _handleErrors(const char *file,
 			        table_options->host,
 			        table_options->port);
 			break;
-		default: ktelogdb(ERROR, db); break;
+		default: _ktelogdb(ERROR,file, func, line, db); break;
 	}
 	return false;
 }
