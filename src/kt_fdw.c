@@ -178,7 +178,7 @@ typedef struct ktTableOptions {
 	char *host;
 	int32_t port;
 	double timeout;
-	uint64_t reconnect_timeout;
+	int64_t reconnect_timeout;
 	Oid serverId;
 	Oid userId;
 } ktTableOptions;
@@ -219,7 +219,7 @@ typedef struct {
 	KtConnCacheKey key;
 	KTDB *db;
 	int xact_depth;
-	uint64_t creation_time;
+	int64_t creation_time;
 } KtConnCacheEntry;
 
 static HTAB *ConnectionHash = NULL;
@@ -295,7 +295,7 @@ static KtConnCacheEntry *GetConnCacheEntry(
 
 #define ktelogdb(type, db) _ktelogdb(type, __FILE__, __func__, __LINE__, db)
 static void _ktelogdb(
-        int type, const char *file, const char *func, int line, KTDB *db)
+        int type, const char *file UNUSED, const char *func UNUSED, int line UNUSED, KTDB *db)
 {
 	const int err_num   = ktgeterrornum(db);
 	const char *name    = ktgeterror(db);
@@ -334,7 +334,7 @@ static bool isValidOption(const char *option, Oid context)
 	struct ktFdwOption *opt;
 
 #ifdef DEBUG
-	elog(NOTICE, "isValidOption %s", option);
+	ktelog(NOTICE, "isValidOption %s", option);
 #endif
 	for(opt = valid_options; opt->optname; opt++) {
 		if(context == opt->optcontext &&
@@ -346,7 +346,7 @@ static bool isValidOption(const char *option, Oid context)
 }
 
 #ifdef USE_TRANSACTIONS
-static void ktSubXactCallback(XactEvent event, void *arg)
+static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 {
 	HASH_SEQ_STATUS scan;
 	KtConnCacheEntry *entry;
@@ -362,7 +362,7 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 			case XACT_EVENT_PRE_COMMIT:
 			case XACT_EVENT_PARALLEL_PRE_COMMIT:
 				if(!ktcommit(entry->db)) {
-					ktelogdb(ERROR, db);
+					ktelogdb(ERROR, entry->db);
 				}
 				break;
 			case XACT_EVENT_PRE_PREPARE:
@@ -383,7 +383,7 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 				break;
 			case XACT_EVENT_ABORT:
 			case XACT_EVENT_PARALLEL_ABORT:
-				if(!ktabort(entry->db)) { ktelogdb(ERROR, db); }
+				if(!ktabort(entry->db)) { ktelogdb(ERROR, entry->db); }
 				break;
 		}
 		entry->xact_depth = 0;
@@ -392,7 +392,7 @@ static void ktSubXactCallback(XactEvent event, void *arg)
 	xact_got_connection = false;
 }
 
-static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry)
+static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,  struct ktTableOptions *table_options)
 {
 	int curlevel =
 	        GetCurrentTransactionNestLevel();// I dont think it should ever
@@ -415,7 +415,7 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry)
 	if(entry->xact_depth < curlevel) {
 	RETRY:
 		if(!ktbegin_transaction(entry->db)) {
-			if(handleErrors(fmstate->db, &fmstate->opt)) {
+			if(handleErrors(entry->db, table_options)) {
 				// Replay
 				goto RETRY;
 			}
@@ -487,7 +487,7 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 			entry->db            = ktdbnew();
 
 			if(!entry->db) {
-				elog(ERROR,
+				ktelog(ERROR,
 				     "could not allocate memory for ktdb");
 			}
 
@@ -517,15 +517,17 @@ KTDB *GetKtConnection(struct ktTableOptions *table_options)
 	}
 
 #ifdef USE_TRANSACTIONS
-	KtBeginTransactionIfNeeded(entry);
+	KtBeginTransactionIfNeeded(entry, table_options);
 #endif
 
 	return entry->db;
 }
 
-void ReleaseKtConnection(KTDB *db)
+void ReleaseKtConnection(KTDB *db UNUSED)
 {
 	/* keep arround for next connection */
+
+	// Do we know that transactions are completed?
 	/*if(!ktdbclose(db))
 	    elog(ERROR, "Error could not close connection when counting");
 	ktdbdel(db);*/
@@ -602,7 +604,7 @@ static void getTableOptions(Oid foreigntableid,
 	}
 }
 
-Datum kt_fdw_validator(PG_FUNCTION_ARGS)
+Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 {
 	List *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
 	Oid catalog        = PG_GETARG_OID(1);
@@ -754,7 +756,7 @@ static void getKeyBasedQual(Node *node,
 	return;
 }
 
-static void ktGetForeignRelSize(PlannerInfo *root,
+static void ktGetForeignRelSize(PlannerInfo *root UNUSED,
                                 RelOptInfo *baserel,
                                 Oid foreigntableid)
 {
@@ -825,7 +827,7 @@ static void ktGetForeignRelSize(PlannerInfo *root,
 
 static void ktGetForeignPaths(PlannerInfo *root,
                               RelOptInfo *baserel,
-                              Oid foreigntableid)
+                              Oid foreigntableid UNUSED)
 {
 	/*
 	 * Create possible access paths for a scan on a foreign table. This is
@@ -875,13 +877,13 @@ static void ktGetForeignPaths(PlannerInfo *root,
 	                                        NIL)); /* no fdw_private data */
 }
 
-static ForeignScan *ktGetForeignPlan(PlannerInfo *root,
+static ForeignScan *ktGetForeignPlan(PlannerInfo *root UNUSED,
                                      RelOptInfo *baserel,
-                                     Oid foreigntableid,
-                                     ForeignPath *best_path,
+                                     Oid foreigntableid UNUSED,
+                                     ForeignPath *best_path UNUSED,
                                      List *tlist,
                                      List *scan_clauses,
-                                     Plan *plan)
+                                     Plan *plan UNUSED)
 {
 	/*
 	 * Create a ForeignScan plan node from the selected foreign access path.
@@ -1114,7 +1116,7 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 	return slot;
 }
 
-static void ktReScanForeignScan(ForeignScanState *node)
+static void ktReScanForeignScan(ForeignScanState *node UNUSED)
 {
 	/*
 	 * Restart the scan from the beginning. Note that any parameters the
@@ -1151,7 +1153,7 @@ static void ktEndForeignScan(ForeignScanState *node)
 }
 
 static void ktAddForeignUpdateTargets(Query *parsetree,
-                                      RangeTblEntry *target_rte,
+                                      RangeTblEntry *target_rte UNUSED,
                                       Relation target_relation)
 {
 	/*
@@ -1212,10 +1214,10 @@ static void ktAddForeignUpdateTargets(Query *parsetree,
 	parsetree->targetList = lappend(parsetree->targetList, tle);
 }
 
-static List *ktPlanForeignModify(PlannerInfo *root,
-                                 ModifyTable *plan,
-                                 Index resultRelation,
-                                 int subplan_index)
+static List *ktPlanForeignModify(PlannerInfo *root UNUSED,
+                                 ModifyTable *plan UNUSED,
+                                 Index resultRelation UNUSED,
+                                 int subplan_index UNUSED)
 {
 	/*
 	 * Perform any additional planning actions needed for an insert, update,
@@ -1245,7 +1247,7 @@ static List *ktPlanForeignModify(PlannerInfo *root,
 
 static void ktBeginForeignModify(ModifyTableState *mtstate,
                                  ResultRelInfo *rinfo,
-                                 List *fdw_private,
+                                 List *fdw_private UNUSED,
                                  int subplan_index,
                                  int eflags)
 {
@@ -1340,7 +1342,7 @@ static void ktBeginForeignModify(ModifyTableState *mtstate,
 
 enum kt_flag { NONE, SET, APPEND };
 
-static TupleTableSlot *ktExecForeignInsert(EState *estate,
+static TupleTableSlot *ktExecForeignInsert(EState *estate UNUSED,
                                            ResultRelInfo *rinfo,
                                            TupleTableSlot *slot,
                                            TupleTableSlot *planSlot)
@@ -1421,7 +1423,7 @@ RETRY:
 					          "DB: 7: no record: no "
 					          "record") != 0) {
 #ifdef USE_TRANSACTIONS
-						ktelogdb(ERROR, db);
+						ktelogdb(ERROR, fmstate->db);
 #else
 						if(handleErrors(
 						           fmstate->db,
@@ -1438,7 +1440,7 @@ RETRY:
 			                  VARDATA(bval),
 			                  VARSIZE(bval) - VARHDRSZ)) {
 #ifdef USE_TRANSACTIONS
-				ktelogdb(ERROR, db);
+				ktelogdb(ERROR, fmstate->db);
 #else
 				if(handleErrors(fmstate->db, &fmstate->opt)) {
 					// Replay
@@ -1460,7 +1462,7 @@ RETRY:
 			           VARDATA(bval),
 			           VARSIZE(bval) - VARHDRSZ)) {
 #ifdef USE_TRANSACTIONS
-				ktelogdb(ERROR, db);
+				ktelogdb(ERROR, fmstate->db);
 #else
 				if(handleErrors(fmstate->db, &fmstate->opt)) {
 					// Replay
@@ -1474,7 +1476,7 @@ RETRY:
 	return slot;
 }
 
-static TupleTableSlot *ktExecForeignUpdate(EState *estate,
+static TupleTableSlot *ktExecForeignUpdate(EState *estate UNUSED,
                                            ResultRelInfo *rinfo,
                                            TupleTableSlot *slot,
                                            TupleTableSlot *planSlot)
@@ -1542,7 +1544,7 @@ RETRY:
 	               VARDATA(bval),
 	               VARSIZE(bval) - VARHDRSZ)) {
 #ifdef USE_TRANSACTIONS
-		ktelogdb(ERROR, db);
+		ktelogdb(ERROR, fmstate->db);
 #else
 		if(handleErrors(fmstate->db, &fmstate->opt)) {
 			// Replay
@@ -1554,7 +1556,7 @@ RETRY:
 	return slot;
 }
 
-static TupleTableSlot *ktExecForeignDelete(EState *estate,
+static TupleTableSlot *ktExecForeignDelete(EState *estate UNUSED,
                                            ResultRelInfo *rinfo,
                                            TupleTableSlot *slot,
                                            TupleTableSlot *planSlot)
@@ -1600,7 +1602,7 @@ RETRY:
 #endif
 	if(!ktremovel(fmstate->db, VARDATA(bkey), VARSIZE(bkey) - VARHDRSZ)) {
 #ifdef USE_TRANSACTIONS
-		ktelogdb(ERROR, db);
+		ktelogdb(ERROR, fmstate->db);
 #else
 		if(handleErrors(fmstate->db, &fmstate->opt)) {
 			// Replay
@@ -1612,7 +1614,7 @@ RETRY:
 	return slot;
 }
 
-static void ktEndForeignModify(EState *estate, ResultRelInfo *rinfo)
+static void ktEndForeignModify(EState *estate UNUSED, ResultRelInfo *rinfo)
 {
 	/*
 	 * End the table update and release resources. It is normally not
@@ -1635,8 +1637,8 @@ static void ktEndForeignModify(EState *estate, ResultRelInfo *rinfo)
 	}
 }
 
-static void ktExplainForeignScan(ForeignScanState *node,
-                                 struct ExplainState *es)
+static void ktExplainForeignScan(ForeignScanState *node UNUSED,
+                                 struct ExplainState *es UNUSED)
 {
 	/*
 	 * Print additional EXPLAIN output for a foreign table scan. This
@@ -1653,11 +1655,11 @@ static void ktExplainForeignScan(ForeignScanState *node,
 	elog(DEBUG1, "entering function %s", __func__);
 }
 
-static void ktExplainForeignModify(ModifyTableState *mtstate,
-                                   ResultRelInfo *rinfo,
-                                   List *fdw_private,
-                                   int subplan_index,
-                                   struct ExplainState *es)
+static void ktExplainForeignModify(ModifyTableState *mtstate UNUSED,
+                                   ResultRelInfo *rinfo UNUSED,
+                                   List *fdw_private UNUSED,
+                                   int subplan_index UNUSED,
+                                   struct ExplainState *es UNUSED)
 {
 	/*
 	 * Print additional EXPLAIN output for a foreign table update. This
@@ -1675,9 +1677,9 @@ static void ktExplainForeignModify(ModifyTableState *mtstate,
 	elog(DEBUG1, "entering function %s", __func__);
 }
 
-static bool ktAnalyzeForeignTable(Relation relation,
-                                  AcquireSampleRowsFunc *func,
-                                  BlockNumber *totalpages)
+static bool ktAnalyzeForeignTable(Relation relation UNUSED,
+                                  AcquireSampleRowsFunc *func UNUSED,
+                                  BlockNumber *totalpages UNUSED)
 {
 	/* ----
 	 * This function is called when ANALYZE is executed on a foreign table.

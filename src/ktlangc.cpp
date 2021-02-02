@@ -87,7 +87,7 @@ void ktcurdel(KTCUR *cur)
 	delete rcur;
 }
 
-bool next(KTDB *db, KTCUR *cur, char **key, char **value)
+bool next(KTDB *db UNUSED, KTCUR *cur, char **key, char **value)
 {
 	std::string skey;
 	std::string sval;
@@ -104,7 +104,7 @@ bool next(KTDB *db, KTCUR *cur, char **key, char **value)
 	return true;
 }
 
-bool nextl(KTDB *db,
+bool nextl(KTDB *db UNUSED,
            KTCUR *cur,
            char **key,
            size_t *key_len,
@@ -151,7 +151,7 @@ bool ktgetl(KTDB *db, char *key, size_t *key_len, char **value, size_t *val_len)
 {
 	_assert_(db && key);
 
-	std::string skey(key);
+	std::string skey(key, *key_len);
 	std::string sval;
 	RemoteDB *pdb = (RemoteDB *)db;
 
@@ -247,7 +247,7 @@ const char *ktgeterror(KTDB *db)
 	return pdb->error().name();
 }
 
-const int ktgeterrornum(KTDB *db)
+int ktgeterrornum(KTDB *db)
 {
 	_assert_(db);
 	RemoteDB *pdb = (RemoteDB *)db;

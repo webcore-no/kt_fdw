@@ -20,6 +20,7 @@
  *
  */
 
+#define UNUSED __attribute__((unused))
 #ifndef _KTLANGC_H /* duplication check */
 	#define _KTLANGC_H
 
@@ -101,7 +102,7 @@ bool ktsetl(KTDB *      db,
             size_t      vallen);
 
 const char *ktgeterror(KTDB *db);
-const int ktgeterrornum(KTDB *db);
+int ktgeterrornum(KTDB *db);
 const char *ktgeterrormsg(KTDB *db);
 
 bool ktbegin_transaction(KTDB *db);

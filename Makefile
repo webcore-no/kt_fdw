@@ -31,9 +31,12 @@ OBJS          = $(patsubst %.c, %.o, $(wildcard src/*.c)) src/ktlangc.o
 PG_CONFIG    ?= pg_config
 SHLIB_LINK    = -lkyototycoon -lsasl2 -lkyotocabinet
 
-CXXFLAGS      = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char \
+FLAGS         = -march=native -m64 -g -O2 -Wall -Wextra -Werror -fPIC -fsigned-char \
+                -Wno-error=unused-parameter \
                 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter \
-                -DUSE_TRANSACTIONS -DKTVERBOSE -O -Wexstra -Werror
+                -DUSE_TRANSACTIONS -DKTLOGVERBOSE -O
+PG_CXXFLAGS   = $(CXXFLAGS) $(FLAGS)
+PG_CFLAGS     = $(CFLAGS) $(FLAGS)
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
 
