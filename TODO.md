@@ -4,8 +4,8 @@
 - [ ] Make sure transactions fail on connection loss
 
 # Tests that need to be written
-- [ ] kt_set
-- [ ] kt_append
-- [ ] Insert value = NULL
+- [X] kt_set
+- [X] kt_append
+- [X] Insert value = NULL
 - [ ] Reconnect to kyototycoon
 - [ ] No kt server test
