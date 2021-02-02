@@ -1058,14 +1058,14 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 
 	if(estate->key_based_qual) {
 		if(!estate->key_based_qual_sent) {
+			val[0] = estate->key_based_qual_value;
+			len[0] = strlen(estate->key_based_qual_value);
 			estate->key_based_qual_sent = true;
 			found                       = ktgetl(estate->db,
-                                       estate->key_based_qual_value,
+                                       val[0],
                                        &len[0],
                                        &val[1],
                                        &len[1]);
-			len[0] = strlen(estate->key_based_qual_value);
-			val[0] = estate->key_based_qual_value;
 		}
 	} else {
 		found = nextl(estate->db,
