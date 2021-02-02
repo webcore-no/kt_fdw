@@ -165,12 +165,13 @@ struct ktFdwOption {
 	Oid optcontext; /* Oid of catalog in which option may appear */
 };
 
+// timeout -> time
 static struct ktFdwOption valid_options[] = {
         /* Connection options */
         {"host", ForeignServerRelationId},
         {"port", ForeignServerRelationId},
         {"timeout", ForeignServerRelationId},
-        {"reconnect_timeout", ForeignServerRelationId},
+        {"reconecct", ForeignServerRelationId},
         /* Sentinel */
         {NULL, InvalidOid}};
 
@@ -178,7 +179,7 @@ typedef struct ktTableOptions {
 	char *host;
 	int32_t port;
 	double timeout;
-	int64_t reconnect_timeout;
+	int64_t reconecct;
 	Oid serverId;
 	Oid userId;
 } ktTableOptions;
@@ -493,8 +494,8 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
 		if(entry->creation_time == 0 ||
-		   (table_options->reconnect_timeout != -1 &&
-		    entry->creation_time + table_options->reconnect_timeout <
+		   (table_options->reconecct != -1 &&
+		    entry->creation_time + table_options->reconecct <
 		            now)) {
 			entry->creation_time = now;
 			entry->db            = ktdbnew();
@@ -551,7 +552,7 @@ void initTableOptions(struct ktTableOptions *table_options)
 	table_options->host              = NULL;
 	table_options->port              = 0;
 	table_options->timeout           = 0;
-	table_options->reconnect_timeout = 0;
+	table_options->reconecct = 0;
 }
 
 static void getTableOptions(Oid foreigntableid,
@@ -599,8 +600,8 @@ static void getTableOptions(Oid foreigntableid,
 		if(strcmp(def->defname, "timeout") == 0)
 			table_options->timeout = atoi(defGetString(def));
 
-		if(strcmp(def->defname, "reconnect_timeout") == 0)
-			table_options->reconnect_timeout =
+		if(strcmp(def->defname, "reconecct") == 0)
+			table_options->reconecct =
 			        atoi(defGetString(def));
 	}
 
@@ -612,8 +613,8 @@ static void getTableOptions(Oid foreigntableid,
 		table_options->timeout = -1;// no timeout
 	}
 
-	if(!table_options->reconnect_timeout) {
-		table_options->reconnect_timeout = -1;// One secound timeout
+	if(!table_options->reconecct) {
+		table_options->reconecct = -1;// One secound timeout
 	}
 }
 
@@ -696,16 +697,16 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 
 			table_options.timeout = atoi(defGetString(def));
 		}
-		if(strcmp(def->defname, "reconnect_timeout") == 0) {
-			if(table_options.reconnect_timeout)
+		if(strcmp(def->defname, "reconecct") == 0) {
+			if(table_options.reconecct)
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant "
 				                "options: "
-				                "reconnect_timeout (%s)",
+				                "reconecct (%s)",
 				                defGetString(def))));
 
-			table_options.reconnect_timeout =
+			table_options.reconecct =
 			        atoi(defGetString(def));
 		}
 	}

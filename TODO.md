@@ -2,6 +2,7 @@
 - [ ] Give the user the option not to use flags
 - [ ] Only accept creation of tables with 2 or 3 columns
 - [ ] Make sure transactions fail on connection loss
+- [X] Change from timeout to time/interval/nil reconnect
 
 # Tests that need to be written
 - [X] kt_set
