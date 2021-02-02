@@ -62,44 +62,44 @@ typedef struct {
 } KTCUR;
 
 KTDB *ktdbnew(void);
-void  ktdbdel(KTDB *db);
-bool  ktdbopen(KTDB *db, const char *host, int32_t port, double timeout);
-bool  ktdbclose(KTDB *db);
+void ktdbdel(KTDB *db);
+bool ktdbopen(KTDB *db, const char *host, int32_t port, double timeout);
+bool ktdbclose(KTDB *db);
 
 int64_t ktdbcount(KTDB *db);
 
 KTCUR *get_cursor(KTDB *DB);
-void   ktcurdel(KTCUR *cur);
-bool   next(KTDB *db, KTCUR *cur, char **key, char **value);
-bool   ktget(KTDB *db, char *key, char **value);
+void ktcurdel(KTCUR *cur);
+bool next(KTDB *db, KTCUR *cur, char **key, char **value);
+bool ktget(KTDB *db, char *key, char **value);
 
 bool ktgetl(
         KTDB *db, char *key, size_t *key_len, char **value, size_t *val_len);
-bool nextl(KTDB *  db,
-           KTCUR * cur,
-           char ** key,
+bool nextl(KTDB *db,
+           KTCUR *cur,
+           char **key,
            size_t *key_len,
-           char ** value,
+           char **value,
            size_t *val_len);
 bool ktadd(KTDB *db, const char *key, const char *value);
-bool ktaddl(KTDB *      db,
+bool ktaddl(KTDB *db,
             const char *key,
-            size_t      keylen,
+            size_t keylen,
             const char *value,
-            size_t      vallen);
+            size_t vallen);
 bool ktreplace(KTDB *db, const char *key, const char *value);
-bool ktreplacel(KTDB *      db,
+bool ktreplacel(KTDB *db,
                 const char *key,
-                size_t      keylen,
+                size_t keylen,
                 const char *value,
-                size_t      vallen);
+                size_t vallen);
 bool ktremove(KTDB *db, const char *key);
 bool ktremovel(KTDB *db, const char *key, size_t keylen);
-bool ktsetl(KTDB *      db,
+bool ktsetl(KTDB *db,
             const char *key,
-            size_t      keylen,
+            size_t keylen,
             const char *value,
-            size_t      vallen);
+            size_t vallen);
 
 const char *ktgeterror(KTDB *db);
 int ktgeterrornum(KTDB *db);

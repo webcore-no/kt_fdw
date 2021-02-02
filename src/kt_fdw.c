@@ -283,19 +283,22 @@ static KtConnCacheEntry *GetConnCacheEntry(
 #define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
 
 #ifdef KTLOGVERBOSE
-#define _ktelog(type, file, func, line, fmt, ...) \
-	elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
+	#define _ktelog(type, file, func, line, fmt, ...) \
+		elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
 #else
-#define _ktelog(type, file, func, line, fmt, ...) \
-	elog(type, fmt, ##__VA_ARGS__)
+	#define _ktelog(type, file, func, line, fmt, ...) \
+		elog(type, fmt, ##__VA_ARGS__)
 #endif
 
 #define handleErrors(db, table_options) \
 	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
 
 #define ktelogdb(type, db) _ktelogdb(type, __FILE__, __func__, __LINE__, db)
-static void _ktelogdb(
-        int type, const char *file UNUSED, const char *func UNUSED, int line UNUSED, KTDB *db)
+static void _ktelogdb(int type,
+                      const char *file UNUSED,
+                      const char *func UNUSED,
+                      int line UNUSED,
+                      KTDB *db)
 {
 	const int err_num   = ktgeterrornum(db);
 	const char *name    = ktgeterror(db);
@@ -322,7 +325,13 @@ static bool _handleErrors(const char *file,
 			if(KtOpenConnection(entry, table_options)) {
 				return true;
 			}
-			_ktelog(ERROR, file, func, line, "Failed to reconnect to server %s:%d", table_options->host, table_options->port);
+			_ktelog(ERROR,
+			        file,
+			        func,
+			        line,
+			        "Failed to reconnect to server %s:%d",
+			        table_options->host,
+			        table_options->port);
 			break;
 		default: ktelogdb(ERROR, db); break;
 	}
@@ -383,7 +392,9 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 				break;
 			case XACT_EVENT_ABORT:
 			case XACT_EVENT_PARALLEL_ABORT:
-				if(!ktabort(entry->db)) { ktelogdb(ERROR, entry->db); }
+				if(!ktabort(entry->db)) {
+					ktelogdb(ERROR, entry->db);
+				}
 				break;
 		}
 		entry->xact_depth = 0;
@@ -392,7 +403,8 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 	xact_got_connection = false;
 }
 
-static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,  struct ktTableOptions *table_options)
+static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,
+                                       struct ktTableOptions *table_options)
 {
 	int curlevel =
 	        GetCurrentTransactionNestLevel();// I dont think it should ever
@@ -480,15 +492,16 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 		gettimeofday(&tv, NULL);
 		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
-		if(entry->creation_time == 0 || (table_options->reconnect_timeout != -1 &&
-		   entry->creation_time + table_options->reconnect_timeout <
-		           now)) {
+		if(entry->creation_time == 0 ||
+		   (table_options->reconnect_timeout != -1 &&
+		    entry->creation_time + table_options->reconnect_timeout <
+		            now)) {
 			entry->creation_time = now;
 			entry->db            = ktdbnew();
 
 			if(!entry->db) {
 				ktelog(ERROR,
-				     "could not allocate memory for ktdb");
+				       "could not allocate memory for ktdb");
 			}
 
 			if(!ktdbopen(entry->db,
