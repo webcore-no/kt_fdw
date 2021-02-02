@@ -35,6 +35,17 @@ make installcheck
 insert into <table name> values ('key', 'value', 'kt_set');
 ```
 Makes insert overwrite existing keys in kyototycoon.
+```pgsql
+insert into <table name> values ('key', NULL, 'kt_set');
+```
+If value == NULL and the 'kt_set' flag is present. The insert acts
+as a delete.
+### kt_append
+```pgsql
+insert into <table name> values ('key', 'value', 'kt_append');
+```
+Should append 'value' to any existing value in 'key'
+
 ## Usage:
 ```pgsql
 CREATE SERVER <server name> FOREIGN DATA WRAPPER kt_fdw OPTIONS
