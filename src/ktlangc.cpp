@@ -222,6 +222,18 @@ bool ktsetl(KTDB *db,
 	return pdb->set(key, keylen, value, vallen);
 }
 
+bool ktappendl(KTDB *db,
+               const char *key,
+               size_t keylen,
+               const char *value,
+               size_t vallen)
+{
+	_assert_(db);
+	RemoteDB *pdb = (RemoteDB *)db;
+
+	return pdb->append(key, keylen, value, vallen);
+}
+
 bool ktremove(KTDB *db, const char *key)
 {
 	_assert_(db);

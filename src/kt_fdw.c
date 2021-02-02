@@ -333,7 +333,7 @@ static bool _handleErrors(const char *file,
 			        table_options->host,
 			        table_options->port);
 			break;
-		default: _ktelogdb(ERROR,file, func, line, db); break;
+		default: _ktelogdb(ERROR, file, func, line, db); break;
 	}
 	return false;
 }
@@ -1061,11 +1061,8 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 			val[0] = estate->key_based_qual_value;
 			len[0] = strlen(estate->key_based_qual_value);
 			estate->key_based_qual_sent = true;
-			found                       = ktgetl(estate->db,
-                                       val[0],
-                                       &len[0],
-                                       &val[1],
-                                       &len[1]);
+			found                       = ktgetl(
+                                estate->db, val[0], &len[0], &val[1], &len[1]);
 		}
 	} else {
 		found = nextl(estate->db,
@@ -1452,6 +1449,27 @@ RETRY:
 			                  VARSIZE(bkey) - VARHDRSZ,
 			                  VARDATA(bval),
 			                  VARSIZE(bval) - VARHDRSZ)) {
+#ifdef USE_TRANSACTIONS
+				ktelogdb(ERROR, fmstate->db);
+#else
+				if(handleErrors(fmstate->db, &fmstate->opt)) {
+					// Replay
+					goto RETRY;
+				}
+#endif
+			}
+		} break;
+		case APPEND: {
+			if(isDelete) {
+				ktelog(ERROR,
+				       "Value is NULL, to overwrite value use "
+				       "'kt_set' flag");
+			}
+			if(!ktappendl(fmstate->db,
+			              VARDATA(bkey),
+			              VARSIZE(bkey) - VARHDRSZ,
+			              VARDATA(bval),
+			              VARSIZE(bval) - VARHDRSZ)) {
 #ifdef USE_TRANSACTIONS
 				ktelogdb(ERROR, fmstate->db);
 #else
