@@ -1,0 +1,20 @@
+create server kt_server foreign data wrapper kt_fdw;
+ERROR:  server "kt_server" already exists
+create foreign table kt_test (key text, value text, flag text) server kt_server;
+ERROR:  relation "kt_test" already exists
+create user mapping for public server kt_server;
+ERROR:  user mapping for "public" already exists for server "kt_server"
+delete from kt_test;
+insert into kt_test values ('key1', 'foo');
+select * from kt_test;
+ key  | value | flag 
+------+-------+------
+ key1 | foo   | 
+(1 row)
+
+insert into kt_test values ('key1', NULL, 'kt_set');
+select * from kt_test;
+ key | value | flag 
+-----+-------+------
+(0 rows)
+

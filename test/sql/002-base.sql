@@ -1,12 +1,19 @@
-create server kt_server foreign data wrapper kt_fdw;
-create foreign table kt_test (key text, value text) server kt_server;
+set client_min_messages=ERROR;
+drop server if exists kt_server cascade;
+set client_min_messages=NOTICE;
+
+create  server kt_server foreign data wrapper kt_fdw;
+create foreign table kt_test (key text, value text, flag text) server kt_server;
 create user mapping for public server kt_server;
 delete from kt_test;
+
 insert into kt_test values ('key1', 'val1.1');
 insert into kt_test values ('key1', 'val1.1000');
 insert into kt_test values ('key2', 'val2.1');
 insert into kt_test values ('key3', 'val3.1');
 insert into kt_test values ('key4', 'val4.1');
+
+
 select * from kt_test;
 update kt_test set value = 'val1.2' where key='key1';
 select value from kt_test where key='key1';

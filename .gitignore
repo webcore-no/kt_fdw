@@ -5,3 +5,4 @@ tags
 test/*.diffs
 test/*.out
 test/results
+sql/kt_fdw-*
