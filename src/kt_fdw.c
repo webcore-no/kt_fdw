@@ -200,7 +200,7 @@ static struct ktFdwOption valid_options[] = {
         {"host", ForeignServerRelationId},
         {"port", ForeignServerRelationId},
         {"timeout", ForeignServerRelationId},
-        {"reconecct", ForeignServerRelationId},
+        {"reconnect", ForeignServerRelationId},
         /* Sentinel */
         {NULL, InvalidOid}};
 
@@ -208,7 +208,7 @@ typedef struct ktTableOptions {
 	char *host;
 	int32_t port;
 	double timeout;
-	int64_t reconecct;
+	int64_t reconnect;
 	Oid serverId;
 	Oid userId;
 } ktTableOptions;
@@ -495,8 +495,8 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
 		if(entry->creation_time == 0 ||
-		   (table_options->reconecct != -1 &&
-		    entry->creation_time + table_options->reconecct <
+		   (table_options->reconnect != -1 &&
+		    entry->creation_time + table_options->reconnect <
 		            now)) {
 			entry->creation_time = now;
 			entry->db            = ktdbnew();
@@ -553,7 +553,7 @@ void initTableOptions(struct ktTableOptions *table_options)
 	table_options->host              = NULL;
 	table_options->port              = 0;
 	table_options->timeout           = 0;
-	table_options->reconecct = 0;
+	table_options->reconnect = 0;
 }
 
 static void getTableOptions(Oid foreigntableid,
@@ -601,8 +601,8 @@ static void getTableOptions(Oid foreigntableid,
 		if(strcmp(def->defname, "timeout") == 0)
 			table_options->timeout = atoi(defGetString(def));
 
-		if(strcmp(def->defname, "reconecct") == 0)
-			table_options->reconecct =
+		if(strcmp(def->defname, "reconnect") == 0)
+			table_options->reconnect =
 			        atoi(defGetString(def));
 	}
 
@@ -614,8 +614,8 @@ static void getTableOptions(Oid foreigntableid,
 		table_options->timeout = -1;// no timeout
 	}
 
-	if(!table_options->reconecct) {
-		table_options->reconecct = -1;// One secound timeout
+	if(!table_options->reconnect) {
+		table_options->reconnect = -1;// One secound timeout
 	}
 }
 
@@ -698,16 +698,16 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 
 			table_options.timeout = atoi(defGetString(def));
 		}
-		if(strcmp(def->defname, "reconecct") == 0) {
-			if(table_options.reconecct)
+		if(strcmp(def->defname, "reconnect") == 0) {
+			if(table_options.reconnect)
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
 				         errmsg("conflicting or redundant "
 				                "options: "
-				                "reconecct (%s)",
+				                "reconnect (%s)",
 				                defGetString(def))));
 
-			table_options.reconecct =
+			table_options.reconnect =
 			        atoi(defGetString(def));
 		}
 	}
