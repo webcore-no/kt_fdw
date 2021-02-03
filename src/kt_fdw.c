@@ -54,6 +54,7 @@
 #include "storage/fd.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -149,15 +150,23 @@ static bool ktAnalyzeForeignTable(Relation relation,
                                   AcquireSampleRowsFunc *func,
                                   BlockNumber *totalpages);
 
-
 #define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
 
 #ifdef KTLOGVERBOSE
 	#define _ktelog(type, file, func, line, fmt, ...) \
 		elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
+
+	#define kterrmsg(fmt, ...)        \
+		errmsg("%s:%s():%d " fmt, \
+		       __FILE__,          \
+		       __func__,          \
+		       __LINE__,          \
+		       ##__VA_ARGS__)
 #else
 	#define _ktelog(type, file, func, line, fmt, ...) \
 		elog(type, fmt, ##__VA_ARGS__)
+
+	#define kterrmsg(fmt, ...) errmsg(fmt, ##__VA_ARGS__)
 #endif
 
 #define handleErrors(db, table_options) \
@@ -257,9 +266,6 @@ static HTAB *ConnectionHash = NULL;
 static bool xact_got_connection = false;
 #endif
 
-
-
-
 void initTableOptions(struct ktTableOptions *table_options);
 KTDB *GetKtConnection(struct ktTableOptions *table_options);
 void ReleaseKtConnection(KTDB *db);
@@ -269,7 +275,7 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 static KtConnCacheEntry *GetConnCacheEntry(
         struct ktTableOptions *table_options);
 
-static bool _handleErrors(const char *file,
+static void _handleErrors(const char *file,
                           const char *func,
                           const int line,
                           KTDB *db,
@@ -281,24 +287,14 @@ static bool _handleErrors(const char *file,
 
 	switch(err_num) {
 		case 6:// Network error
-			_ktelogdb(NOTICE, file, func, line, db);
+			ktelogdb(WARNING, db);
 			entry = GetConnCacheEntry(table_options);
 			ktdbdel(entry->db);
 			entry->db = NULL;
-			if(KtOpenConnection(entry, table_options)) {
-				return true;
-			}
-			_ktelog(ERROR,
-			        file,
-			        func,
-			        line,
-			        "Failed to reconnect to server %s:%d",
-			        table_options->host,
-			        table_options->port);
+			KtOpenConnection(entry, table_options);
 			break;
 		default: _ktelogdb(ERROR, file, func, line, db); break;
 	}
-	return false;
 }
 
 Datum kt_fdw_handler(PG_FUNCTION_ARGS UNUSED)
@@ -376,10 +372,10 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 				break;
 			case XACT_EVENT_PRE_PREPARE:
 				ereport(ERROR,
-				        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				         errmsg("cannot prepare a transaction "
-				                "that modified remote "
-				                "tables")));
+				        errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				        kterrmsg("cannot prepare a transaction "
+				                 "that modified remote "
+				                 "tables"));
 				break;
 			case XACT_EVENT_COMMIT:
 			case XACT_EVENT_PREPARE:
@@ -387,8 +383,8 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 				/* Should not get here -- pre-commit should have
 				 * handled it */
 				ktelog(ERROR,
-				     "missed cleaning up connection during "
-				     "pre-commit");
+				       "missed cleaning up connection during "
+				       "pre-commit");
 				break;
 			case XACT_EVENT_ABORT:
 			case XACT_EVENT_PARALLEL_ABORT:
@@ -413,24 +409,24 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,
 	if(curlevel < 1)// I dont get something
 	{
 		ktelog(ERROR,
-		     "Transaction level should not be less than one");// I don't
-		                                                      // understand
+		       "Transaction level should not be less than one");// I
+		                                                        // don't
+		                                                        // understand
 	}
 
 	if(curlevel > 1)// kt does not support savepoints
 	{
 		ereport(ERROR,
 		        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-		         errmsg("Kyoto Tycoon does not support savepoints")));
+		         kterrmsg("Kyoto Tycoon does not support savepoints")));
 	}
 
 	if(entry->xact_depth < curlevel) {
 	RETRY:
 		if(!ktbegin_transaction(entry->db)) {
-			if(handleErrors(entry->db, table_options)) {
-				// Replay
-				goto RETRY;
-			}
+			handleErrors(entry->db, table_options);
+			// If handle errors returns connection is re-establised
+			goto RETRY;
 		}
 		entry->xact_depth   = curlevel;// 1
 		xact_got_connection = true;
@@ -494,14 +490,15 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 
 		if(entry->creation_time == 0 ||
 		   (table_options->reconnect != -1 &&
-		    entry->creation_time + table_options->reconnect <
-		            now)) {
+		    entry->creation_time + table_options->reconnect < now)) {
 			entry->creation_time = now;
 			entry->db            = ktdbnew();
 
 			if(!entry->db) {
-				ktelog(ERROR,
-				       "could not allocate memory for ktdb");
+				ereport(ERROR,
+				        errcode(ERRCODE_FDW_OUT_OF_MEMORY),
+				        kterrmsg("could not allocate memory "
+				                 "for ktdb"));
 			}
 
 			if(!ktdbopen(entry->db,
@@ -510,10 +507,18 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 			             table_options->timeout)) {
 				ktdbdel(entry->db);
 				entry->db = NULL;
-				return false;
+				ereport(ERROR,
+				        errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
+				        kterrmsg("Failed to connect to %s:%d",
+				                 table_options->host,
+				                 table_options->port));
 			}
 		} else {
-			return false;
+			ereport(ERROR,
+			        errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
+			        kterrmsg("Reconnect on cooldown for %s:%d",
+			                 table_options->host,
+			                 table_options->port));
 		}
 	}
 	return true;
@@ -522,12 +527,7 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 KTDB *GetKtConnection(struct ktTableOptions *table_options)
 {
 	KtConnCacheEntry *entry = GetConnCacheEntry(table_options);
-	if(!KtOpenConnection(entry, table_options)) {
-		ktelog(ERROR,
-		       "Failed to connect to %s:%d",
-		       table_options->host,
-		       table_options->port);
-	}
+	if(!KtOpenConnection(entry, table_options)) {}
 
 #ifdef USE_TRANSACTIONS
 	KtBeginTransactionIfNeeded(entry, table_options);
@@ -548,9 +548,9 @@ void ReleaseKtConnection(KTDB *db UNUSED)
 
 void initTableOptions(struct ktTableOptions *table_options)
 {
-	table_options->host              = NULL;
-	table_options->port              = 0;
-	table_options->timeout           = 0;
+	table_options->host      = NULL;
+	table_options->port      = 0;
+	table_options->timeout   = 0;
 	table_options->reconnect = 0;
 }
 
@@ -600,8 +600,7 @@ static void getTableOptions(Oid foreigntableid,
 			table_options->timeout = atoi(defGetString(def));
 
 		if(strcmp(def->defname, "reconnect") == 0)
-			table_options->reconnect =
-			        atoi(defGetString(def));
+			table_options->reconnect = atoi(defGetString(def));
 	}
 
 	/* Default values, if required */
@@ -653,7 +652,8 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 
 			ereport(ERROR,
 			        (errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
-			         errmsg("invalid option \"%s\"", def->defname),
+			         kterrmsg("invalid option \"%s\"",
+			                  def->defname),
 			         errhint("Valid options in this context are: "
 			                 "%s",
 			                 buf.len ? buf.data : "<none>")));
@@ -665,10 +665,10 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 			if(table_options.host)
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant "
-				                "options: "
-				                "host (%s)",
-				                defGetString(def))));
+				         kterrmsg("conflicting or redundant "
+				                  "options: "
+				                  "host (%s)",
+				                  defGetString(def))));
 
 			table_options.host = defGetString(def);
 		}
@@ -677,10 +677,10 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 			if(table_options.port)
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant "
-				                "options: "
-				                "port (%s)",
-				                defGetString(def))));
+				         kterrmsg("conflicting or redundant "
+				                  "options: "
+				                  "port (%s)",
+				                  defGetString(def))));
 
 			table_options.port = atoi(defGetString(def));
 		}
@@ -689,10 +689,10 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 			if(table_options.timeout)
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant "
-				                "options: "
-				                "timeout (%s)",
-				                defGetString(def))));
+				         kterrmsg("conflicting or redundant "
+				                  "options: "
+				                  "timeout (%s)",
+				                  defGetString(def))));
 
 			table_options.timeout = atoi(defGetString(def));
 		}
@@ -700,13 +700,12 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 			if(table_options.reconnect)
 				ereport(ERROR,
 				        (errcode(ERRCODE_SYNTAX_ERROR),
-				         errmsg("conflicting or redundant "
-				                "options: "
-				                "reconnect (%s)",
-				                defGetString(def))));
+				         kterrmsg("conflicting or redundant "
+				                  "options: "
+				                  "reconnect (%s)",
+				                  defGetString(def))));
 
-			table_options.reconnect =
-			        atoi(defGetString(def));
+			table_options.reconnect = atoi(defGetString(def));
 		}
 	}
 
@@ -1084,8 +1083,9 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 				case VARCHAROID:
 					if(len[i] != strlen(val[i])) {
 						ktelog(ERROR,
-						     "null characters not "
-						     "allowed in text values");
+						       "null characters not "
+						       "allowed in text "
+						       "values");
 						nulls[i] = true;
 					} else {
 						t = palloc(len[i] + VARHDRSZ);
@@ -1435,12 +1435,11 @@ RETRY:
 #ifdef USE_TRANSACTIONS
 						ktelogdb(ERROR, fmstate->db);
 #else
-						if(handleErrors(
-						           fmstate->db,
-						           &fmstate->opt)) {
-							// Replay
-							goto RETRY;
-						}
+						handleErrors(fmstate->db,
+						             &fmstate->opt);
+						// If handle errors returns
+						// connection is re-establised
+						goto RETRY;
 #endif
 					}
 				}
@@ -1452,10 +1451,10 @@ RETRY:
 #ifdef USE_TRANSACTIONS
 				ktelogdb(ERROR, fmstate->db);
 #else
-				if(handleErrors(fmstate->db, &fmstate->opt)) {
-					// Replay
-					goto RETRY;
-				}
+				handleErrors(fmstate->db, &fmstate->opt);
+				// If handle errors returns connection is
+				// re-establised
+				goto RETRY;
 #endif
 			}
 		} break;
@@ -1473,10 +1472,10 @@ RETRY:
 #ifdef USE_TRANSACTIONS
 				ktelogdb(ERROR, fmstate->db);
 #else
-				if(handleErrors(fmstate->db, &fmstate->opt)) {
-					// Replay
-					goto RETRY;
-				}
+				handleErrors(fmstate->db, &fmstate->opt);
+				// If handle errors returns connection is
+				// re-establised
+				goto RETRY;
 #endif
 			}
 		} break;
@@ -1495,10 +1494,10 @@ RETRY:
 #ifdef USE_TRANSACTIONS
 				ktelogdb(ERROR, fmstate->db);
 #else
-				if(handleErrors(fmstate->db, &fmstate->opt)) {
-					// Replay
-					goto RETRY;
-				}
+				handleErrors(fmstate->db, &fmstate->opt);
+				// If handle errors returns connection is
+				// re-establised
+				goto RETRY;
 #endif
 			}
 		} break;
@@ -1563,7 +1562,12 @@ static TupleTableSlot *ktExecForeignUpdate(EState *estate UNUSED,
 	}
 
 	value = slot_getattr(planSlot, 2, &isnull);
-	if(isnull) ktelog(ERROR, "can't get value value");
+	if(isnull) {
+		ereport(ERROR,
+		        errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+		        kterrmsg("value cannoct be null"));
+		// ktelog(ERROR, "can't get value value");
+	}
 
 	bval = SendFunctionCall(fmstate->value_info, value);
 #ifndef USE_TRANSACTIONS
@@ -1577,10 +1581,9 @@ RETRY:
 #ifdef USE_TRANSACTIONS
 		ktelogdb(ERROR, fmstate->db);
 #else
-		if(handleErrors(fmstate->db, &fmstate->opt)) {
-			// Replay
-			goto RETRY;
-		}
+		handleErrors(fmstate->db, &fmstate->opt);
+		// If handle errors returns connection is re-establised
+		goto RETRY;
 #endif
 	}
 
@@ -1625,7 +1628,11 @@ static TupleTableSlot *ktExecForeignDelete(EState *estate UNUSED,
 	ktelog(DEBUG1, "Entering function");
 
 	value = ExecGetJunkAttribute(planSlot, fmstate->key_junk_no, &isnull);
-	if(isnull) ktelog(ERROR, "can't get key value");
+	if(isnull) {
+		ereport(ERROR,
+		        errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+		        kterrmsg("key cannoct be null"));
+	}
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
 #ifndef USE_TRANSACTIONS
@@ -1635,10 +1642,9 @@ RETRY:
 #ifdef USE_TRANSACTIONS
 		ktelogdb(ERROR, fmstate->db);
 #else
-		if(handleErrors(fmstate->db, &fmstate->opt)) {
-			// Replay
-			goto RETRY;
-		}
+		handleErrors(fmstate->db, &fmstate->opt);
+		// If handle errors returns connection is re-establised
+		goto RETRY;
 #endif
 	}
 

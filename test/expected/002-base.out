@@ -7,7 +7,7 @@ create user mapping for public server kt_server;
 delete from kt_test;
 insert into kt_test values ('key1', 'val1.1');
 insert into kt_test values ('key1', 'val1.1000');
-ERROR:  src/kt_fdw.c:ktExecForeignInsert():1496 [logical inconsistency(3)]:DB: 6: record duplication: record duplication
+ERROR:  [logical inconsistency(3)]:DB: 6: record duplication: record duplication
 insert into kt_test values ('key2', 'val2.1');
 insert into kt_test values ('key3', 'val3.1');
 insert into kt_test values ('key4', 'val4.1');

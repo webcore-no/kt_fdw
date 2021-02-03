@@ -6,7 +6,7 @@ create foreign table kt_test (key text, value text, flag text) server kt_server;
 create user mapping for public server kt_server;
 delete from kt_test;
 insert into kt_test values ('key1', NULL);
-ERROR:  src/kt_fdw.c:ktExecForeignInsert():1486 Value is NULL, to overwrite value use 'kt_set' flag
+ERROR:  Value is NULL, to overwrite value use 'kt_set' flag
 select * from kt_test;
  key | value | flag 
 -----+-------+------
@@ -20,7 +20,7 @@ select * from kt_test;
 (1 row)
 
 insert into kt_test values ('key1', NULL);
-ERROR:  src/kt_fdw.c:ktExecForeignInsert():1486 Value is NULL, to overwrite value use 'kt_set' flag
+ERROR:  Value is NULL, to overwrite value use 'kt_set' flag
 select * from kt_test;
  key  | value | flag 
 ------+-------+------
@@ -28,7 +28,7 @@ select * from kt_test;
 (1 row)
 
 insert into kt_test values (NULL, NULL);
-ERROR:  src/kt_fdw.c:ktExecForeignInsert():1397 can't get key value
+ERROR:  can't get key value
 select * from kt_test;
  key  | value | flag 
 ------+-------+------
@@ -36,7 +36,7 @@ select * from kt_test;
 (1 row)
 
 insert into kt_test values (NULL, 'bar');
-ERROR:  src/kt_fdw.c:ktExecForeignInsert():1397 can't get key value
+ERROR:  can't get key value
 select * from kt_test;
  key  | value | flag 
 ------+-------+------
