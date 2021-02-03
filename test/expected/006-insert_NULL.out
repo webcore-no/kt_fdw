@@ -1,9 +1,9 @@
+set client_min_messages=ERROR;
+drop server if exists kt_server cascade;
+set client_min_messages=NOTICE;
 create server kt_server foreign data wrapper kt_fdw;
-ERROR:  server "kt_server" already exists
 create foreign table kt_test (key text, value text, flag text) server kt_server;
-ERROR:  relation "kt_test" already exists
 create user mapping for public server kt_server;
-ERROR:  user mapping for "public" already exists for server "kt_server"
 delete from kt_test;
 insert into kt_test values ('key1', NULL);
 ERROR:  src/kt_fdw.c:ktExecForeignInsert():1486 Value is NULL, to overwrite value use 'kt_set' flag
