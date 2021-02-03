@@ -149,6 +149,35 @@ static bool ktAnalyzeForeignTable(Relation relation,
                                   AcquireSampleRowsFunc *func,
                                   BlockNumber *totalpages);
 
+
+#define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
+
+#ifdef KTLOGVERBOSE
+	#define _ktelog(type, file, func, line, fmt, ...) \
+		elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
+#else
+	#define _ktelog(type, file, func, line, fmt, ...) \
+		elog(type, fmt, ##__VA_ARGS__)
+#endif
+
+static _ktelog(type, file, func, line, fmt, ...)
+
+#define handleErrors(db, table_options) \
+	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
+
+#define ktelogdb(type, db) _ktelogdb(type, __FILE__, __func__, __LINE__, db)
+static void _ktelogdb(int type,
+                      const char *file UNUSED,
+                      const char *func UNUSED,
+                      int line UNUSED,
+                      KTDB *db)
+{
+	const int err_num   = ktgeterrornum(db);
+	const char *name    = ktgeterror(db);
+	const char *message = ktgeterrormsg(db);
+	_ktelog(type, file, func, line, "[%s(%d)]:%s", name, err_num, message);
+}
+
 /*
  * structures used by the FDW
  *
@@ -230,82 +259,17 @@ static HTAB *ConnectionHash = NULL;
 static bool xact_got_connection = false;
 #endif
 
+
+
+
 void initTableOptions(struct ktTableOptions *table_options);
 KTDB *GetKtConnection(struct ktTableOptions *table_options);
 void ReleaseKtConnection(KTDB *db);
-
-Datum kt_fdw_handler(PG_FUNCTION_ARGS UNUSED)
-{
-	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
-
-	elog(DEBUG1, "entering function %s", __func__);
-
-	/* assign the handlers for the FDW */
-
-	/* these are required */
-	fdwroutine->GetForeignRelSize  = ktGetForeignRelSize;
-	fdwroutine->GetForeignPaths    = ktGetForeignPaths;
-	fdwroutine->GetForeignPlan     = ktGetForeignPlan;
-	fdwroutine->BeginForeignScan   = ktBeginForeignScan;
-	fdwroutine->IterateForeignScan = ktIterateForeignScan;
-	fdwroutine->ReScanForeignScan  = ktReScanForeignScan;
-	fdwroutine->EndForeignScan     = ktEndForeignScan;
-
-	/* remainder are optional - use NULL if not required */
-	/* support for insert / update / delete */
-	fdwroutine->AddForeignUpdateTargets = ktAddForeignUpdateTargets;
-	fdwroutine->PlanForeignModify       = ktPlanForeignModify;
-	fdwroutine->BeginForeignModify      = ktBeginForeignModify;
-	fdwroutine->ExecForeignInsert       = ktExecForeignInsert;
-	fdwroutine->ExecForeignUpdate       = ktExecForeignUpdate;
-	fdwroutine->ExecForeignDelete       = ktExecForeignDelete;
-	fdwroutine->EndForeignModify        = ktEndForeignModify;
-
-	/* support for EXPLAIN */
-	fdwroutine->ExplainForeignScan   = ktExplainForeignScan;
-	fdwroutine->ExplainForeignModify = ktExplainForeignModify;
-
-	/* support for ANALYSE */
-	fdwroutine->AnalyzeForeignTable = ktAnalyzeForeignTable;
-
-	PG_RETURN_POINTER(fdwroutine);
-}
-
-typedef struct {
-	const char *name;
-	const char *message;
-} ktErrorMessage;
 
 static bool KtOpenConnection(KtConnCacheEntry *entry,
                              struct ktTableOptions *table_options);
 static KtConnCacheEntry *GetConnCacheEntry(
         struct ktTableOptions *table_options);
-
-#define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
-
-#ifdef KTLOGVERBOSE
-	#define _ktelog(type, file, func, line, fmt, ...) \
-		elog(type, "%s:%s():%d " fmt, file, func, line, ##__VA_ARGS__)
-#else
-	#define _ktelog(type, file, func, line, fmt, ...) \
-		elog(type, fmt, ##__VA_ARGS__)
-#endif
-
-#define handleErrors(db, table_options) \
-	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
-
-#define ktelogdb(type, db) _ktelogdb(type, __FILE__, __func__, __LINE__, db)
-static void _ktelogdb(int type,
-                      const char *file UNUSED,
-                      const char *func UNUSED,
-                      int line UNUSED,
-                      KTDB *db)
-{
-	const int err_num   = ktgeterrornum(db);
-	const char *name    = ktgeterror(db);
-	const char *message = ktgeterrormsg(db);
-	_ktelog(type, file, func, line, "[%s(%d)]:%s", name, err_num, message);
-}
 
 static bool _handleErrors(const char *file,
                           const char *func,
@@ -337,6 +301,43 @@ static bool _handleErrors(const char *file,
 		default: _ktelogdb(ERROR, file, func, line, db); break;
 	}
 	return false;
+}
+
+Datum kt_fdw_handler(PG_FUNCTION_ARGS UNUSED)
+{
+	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
+
+	ktelog(DEBUG1, "Entering function");
+
+	/* assign the handlers for the FDW */
+
+	/* these are required */
+	fdwroutine->GetForeignRelSize  = ktGetForeignRelSize;
+	fdwroutine->GetForeignPaths    = ktGetForeignPaths;
+	fdwroutine->GetForeignPlan     = ktGetForeignPlan;
+	fdwroutine->BeginForeignScan   = ktBeginForeignScan;
+	fdwroutine->IterateForeignScan = ktIterateForeignScan;
+	fdwroutine->ReScanForeignScan  = ktReScanForeignScan;
+	fdwroutine->EndForeignScan     = ktEndForeignScan;
+
+	/* remainder are optional - use NULL if not required */
+	/* support for insert / update / delete */
+	fdwroutine->AddForeignUpdateTargets = ktAddForeignUpdateTargets;
+	fdwroutine->PlanForeignModify       = ktPlanForeignModify;
+	fdwroutine->BeginForeignModify      = ktBeginForeignModify;
+	fdwroutine->ExecForeignInsert       = ktExecForeignInsert;
+	fdwroutine->ExecForeignUpdate       = ktExecForeignUpdate;
+	fdwroutine->ExecForeignDelete       = ktExecForeignDelete;
+	fdwroutine->EndForeignModify        = ktEndForeignModify;
+
+	/* support for EXPLAIN */
+	fdwroutine->ExplainForeignScan   = ktExplainForeignScan;
+	fdwroutine->ExplainForeignModify = ktExplainForeignModify;
+
+	/* support for ANALYSE */
+	fdwroutine->AnalyzeForeignTable = ktAnalyzeForeignTable;
+
+	PG_RETURN_POINTER(fdwroutine);
 }
 
 static bool isValidOption(const char *option, Oid context)
@@ -387,7 +388,7 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 			case XACT_EVENT_PARALLEL_COMMIT:
 				/* Should not get here -- pre-commit should have
 				 * handled it */
-				elog(ERROR,
+				ktelog(ERROR,
 				     "missed cleaning up connection during "
 				     "pre-commit");
 				break;
@@ -413,7 +414,7 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,
 
 	if(curlevel < 1)// I dont get something
 	{
-		elog(ERROR,
+		ktelog(ERROR,
 		     "Transaction level should not be less than one");// I don't
 		                                                      // understand
 	}
@@ -565,7 +566,7 @@ static void getTableOptions(Oid foreigntableid,
 	ListCell *lc;
 
 #ifdef DEBUG
-	elog(NOTICE, "getTableOptions");
+	ktelog(NOTICE, "getTableOptions");
 #endif
 
 	/*
@@ -627,7 +628,7 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 	/* used for detecting duplicates; does not remember vals */
 	struct ktTableOptions table_options;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	initTableOptions(&table_options);
 
@@ -798,7 +799,7 @@ static void ktGetForeignRelSize(PlannerInfo *root UNUSED,
 	KTDB *db;
 	// ktTableOptions table_options;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	baserel->rows = 0;
 
@@ -862,7 +863,7 @@ static void ktGetForeignPaths(PlannerInfo *root,
 
 	Cost startup_cost, total_cost;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	if(strcmp(fdw_private->opt.host, "127.0.0.1") == 0 ||
 	   strcmp(fdw_private->opt.host, "localhost") == 0)
@@ -922,7 +923,7 @@ static ForeignScan *ktGetForeignPlan(PlannerInfo *root UNUSED,
 	 * handled elsewhere).
 	 */
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
@@ -964,7 +965,7 @@ static void ktBeginForeignScan(ForeignScanState *node, int eflags)
 
 	KtFdwExecState *estate;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	estate      = (KtFdwExecState *)palloc(sizeof(KtFdwExecState));
 	estate->cur = NULL;
@@ -1050,7 +1051,7 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 	size_t len[2];
 	char **val = palloc(sizeof(char *) * 2);
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	ExecClearTuple(slot);
 
@@ -1084,7 +1085,7 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 				case TEXTOID:
 				case VARCHAROID:
 					if(len[i] != strlen(val[i])) {
-						elog(ERROR,
+						ktelog(ERROR,
 						     "null characters not "
 						     "allowed in text values");
 						nulls[i] = true;
@@ -1106,7 +1107,7 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 					dvalues[i] = PointerGetDatum(b);
 					break;
 				default:
-					elog(ERROR, "type not supported");
+					ktelog(ERROR, "type not supported");
 					nulls[i] = true;
 			}
 		}
@@ -1135,7 +1136,7 @@ static void ktReScanForeignScan(ForeignScanState *node UNUSED)
 	 * necessarily return exactly the same rows.
 	 */
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 }
 
 static void ktEndForeignScan(ForeignScanState *node)
@@ -1148,7 +1149,7 @@ static void ktEndForeignScan(ForeignScanState *node)
 
 	KtFdwExecState *estate = (KtFdwExecState *)node->fdw_state;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	if(estate) {
 		if(estate->cur) {
@@ -1200,7 +1201,7 @@ static void ktAddForeignUpdateTargets(Query *parsetree,
 	const char *attrname;
 	TargetEntry *tle;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 #if PG_VERSION_NUM >= 110000
 	attr = &RelationGetDescr(target_relation)->attrs[0];
@@ -1251,7 +1252,7 @@ static List *ktPlanForeignModify(PlannerInfo *root UNUSED,
 	 * BeginForeignModify will be NIL.
 	 */
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	return NULL;
 }
@@ -1295,7 +1296,7 @@ static void ktBeginForeignModify(ModifyTableState *mtstate,
 	bool isvarlena;
 	CmdType operation = mtstate->operation;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	if(eflags & EXEC_FLAG_EXPLAIN_ONLY) return;
 
@@ -1311,7 +1312,7 @@ static void ktBeginForeignModify(ModifyTableState *mtstate,
 		fmstate->key_junk_no = ExecFindJunkAttributeInTlist(
 		        subplan->targetlist, "key_junk");
 		if(!AttributeNumberIsValid(fmstate->key_junk_no))
-			elog(ERROR, "could not find key junk column");
+			ktelog(ERROR, "could not find key junk column");
 	}
 
 #if PG_VERSION_NUM >= 110000
@@ -1392,10 +1393,10 @@ static TupleTableSlot *ktExecForeignInsert(EState *estate UNUSED,
 	bytea *bkey, *bval = NULL, *sval;
 	KtFdwModifyState *fmstate = (KtFdwModifyState *)rinfo->ri_FdwState;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	value = slot_getattr(planSlot, 1, &isnull);
-	if(isnull) { elog(ERROR, "can't get key value"); }
+	if(isnull) { ktelog(ERROR, "can't get key value"); }
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
 
@@ -1544,27 +1545,27 @@ static TupleTableSlot *ktExecForeignUpdate(EState *estate UNUSED,
 	bytea *bkey, *bkey_old, *bval;
 	KtFdwModifyState *fmstate = (KtFdwModifyState *)rinfo->ri_FdwState;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	value = ExecGetJunkAttribute(planSlot, fmstate->key_junk_no, &isnull);
-	if(isnull) elog(ERROR, "can't get junk key value");
+	if(isnull) ktelog(ERROR, "can't get junk key value");
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
 
 	value = slot_getattr(planSlot, 1, &isnull);
-	if(isnull) elog(ERROR, "can't get new key value");
+	if(isnull) ktelog(ERROR, "can't get new key value");
 
 	bkey_old = SendFunctionCall(fmstate->key_info, value);
 
 	if(VARSIZE(bkey) != VARSIZE(bkey_old) ||
 	   memcmp(VARDATA(bkey), VARDATA(bkey_old), VARSIZE(bkey) - VARHDRSZ) !=
 	           0) {
-		elog(ERROR, "You cannot update key values");
+		ktelog(ERROR, "You cannot update key values");
 		return slot;
 	}
 
 	value = slot_getattr(planSlot, 2, &isnull);
-	if(isnull) elog(ERROR, "can't get value value");
+	if(isnull) ktelog(ERROR, "can't get value value");
 
 	bval = SendFunctionCall(fmstate->value_info, value);
 #ifndef USE_TRANSACTIONS
@@ -1623,10 +1624,10 @@ static TupleTableSlot *ktExecForeignDelete(EState *estate UNUSED,
 	bytea *bkey;
 	KtFdwModifyState *fmstate = (KtFdwModifyState *)rinfo->ri_FdwState;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	value = ExecGetJunkAttribute(planSlot, fmstate->key_junk_no, &isnull);
-	if(isnull) elog(ERROR, "can't get key value");
+	if(isnull) ktelog(ERROR, "can't get key value");
 
 	bkey = SendFunctionCall(fmstate->key_info, value);
 #ifndef USE_TRANSACTIONS
@@ -1659,7 +1660,7 @@ static void ktEndForeignModify(EState *estate UNUSED, ResultRelInfo *rinfo)
 
 	KtFdwModifyState *fmstate = (KtFdwModifyState *)rinfo->ri_FdwState;
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 
 	if(fmstate) {
 		if(fmstate->db) {
@@ -1684,7 +1685,7 @@ static void ktExplainForeignScan(ForeignScanState *node UNUSED,
 	 * information is printed during EXPLAIN.
 	 */
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 }
 
 static void ktExplainForeignModify(ModifyTableState *mtstate UNUSED,
@@ -1706,7 +1707,7 @@ static void ktExplainForeignModify(ModifyTableState *mtstate UNUSED,
 	 * information is printed during EXPLAIN.
 	 */
 
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 }
 
 static bool ktAnalyzeForeignTable(Relation relation UNUSED,
@@ -1738,6 +1739,6 @@ static bool ktAnalyzeForeignTable(Relation relation UNUSED,
 	 *to zero if the FDW does not have any concept of dead rows.)
 	 * ----
 	 */
-	elog(DEBUG1, "entering function %s", __func__);
+	ktelog(DEBUG1, "Entering function");
 	return false;
 }
