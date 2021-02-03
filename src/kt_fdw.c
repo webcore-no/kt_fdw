@@ -160,8 +160,6 @@ static bool ktAnalyzeForeignTable(Relation relation,
 		elog(type, fmt, ##__VA_ARGS__)
 #endif
 
-static _ktelog(type, file, func, line, fmt, ...)
-
 #define handleErrors(db, table_options) \
 	_handleErrors(__FILE__, __func__, __LINE__, db, table_options)
 
