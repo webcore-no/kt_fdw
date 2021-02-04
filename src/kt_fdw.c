@@ -150,6 +150,8 @@ static bool ktAnalyzeForeignTable(Relation relation,
                                   AcquireSampleRowsFunc *func,
                                   BlockNumber *totalpages);
 
+#define ktfree(x) if(x){ pfree(x); x = NULL; }
+
 #define ktelog(type, args...) _ktelog(type, __FILE__, __func__, __LINE__, args)
 
 #ifdef KTLOGVERBOSE
@@ -1469,6 +1471,7 @@ RETRY:
 				}
 				if(!ex_val || ex_val_len != val_len ||
 				   strncmp(ex_val, val, val_len) != 0) {
+					ex_val = NULL;
 					if(!ktsetl(fmstate->db,
 					           VARDATA(bkey),
 					           VARSIZE(bkey) - VARHDRSZ,
@@ -1481,10 +1484,12 @@ RETRY:
 						             &fmstate->opt);
 						// If handle errors returns
 						// connection is re-establised
+						ktfree(ex_val);
 						goto RETRY;
 #endif
 					}
 				}
+				ktfree(ex_val);
 			}
 		} break;
 		case APPEND: {
