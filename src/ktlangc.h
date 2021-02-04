@@ -95,6 +95,7 @@ bool ktreplacel(KTDB *db,
                 size_t vallen);
 bool ktremove(KTDB *db, const char *key);
 bool ktremovel(KTDB *db, const char *key, size_t keylen);
+char *ktseizel(KTDB *db, const char *key, size_t keylen);
 bool ktsetl(KTDB *db,
             const char *key,
             size_t keylen,

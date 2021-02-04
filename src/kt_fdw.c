@@ -1424,24 +1424,18 @@ RETRY:
 	switch(flag) {
 		case SET: {
 			if(isDelete) {
-				if(!ktremovel(fmstate->db,
-				              VARDATA(bkey),
-				              VARSIZE(bkey) - VARHDRSZ)) {
-					const char *err_msg =
-					        ktgeterrormsg(fmstate->db);
-					if(strcmp(err_msg,
-					          "DB: 7: no record: no "
-					          "record") != 0) {
+				if(!ktseizel(fmstate->db,
+				             VARDATA(bkey),
+				             VARSIZE(bkey) - VARHDRSZ)) {
 #ifdef USE_TRANSACTIONS
-						ktelogdb(ERROR, fmstate->db);
+					ktelogdb(ERROR, fmstate->db);
 #else
-						handleErrors(fmstate->db,
-						             &fmstate->opt);
-						// If handle errors returns
-						// connection is re-establised
-						goto RETRY;
+					handleErrors(fmstate->db,
+					             &fmstate->opt);
+					// If handle errors returns
+					// connection is re-establised
+					goto RETRY;
 #endif
-					}
 				}
 			} else if(!ktsetl(fmstate->db,
 			                  VARDATA(bkey),

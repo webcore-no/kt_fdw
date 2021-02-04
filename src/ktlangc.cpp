@@ -15,6 +15,7 @@
  */
 
 #include "ktlangc.h"
+#include <kccommon.h>
 #include <ktremotedb.h>
 
 using namespace kyototycoon;
@@ -250,6 +251,14 @@ bool ktremovel(KTDB *db, const char *key, size_t keylen)
 	RemoteDB *pdb = (RemoteDB *)db;
 
 	return pdb->remove(key, keylen);
+}
+
+char *ktseizel(KTDB *db, const char *key, size_t keylen)
+{
+	_assert_(db);
+	RemoteDB *pdb = (RemoteDB *)db;
+	size_t i;
+	return pdb->seize(key, keylen, &i);
 }
 
 const char *ktgeterror(KTDB *db)
