@@ -65,7 +65,6 @@ PG_MODULE_MAGIC;
 
 // taken from redis_fdw
 #define PROCID_TEXTEQ 67
-//#define DEBUG 1
 
 /*
  * SQL functions
@@ -358,6 +357,8 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 	HASH_SEQ_STATUS scan;
 	KtConnCacheEntry *entry;
 
+	ktelog(DEBUG1, "Entering function");
+
 	if(!xact_got_connection) return;
 
 	/* xact ended so end transaction on all connections, transaction are
@@ -408,6 +409,7 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,
 	        GetCurrentTransactionNestLevel();// I dont think it should ever
 	                                         // be less than 1;
 
+	ktelog(DEBUG1, "Entering function");
 	if(curlevel < 1)// I dont get something
 	{
 		ktelog(ERROR,
@@ -438,9 +440,12 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry *entry,
 
 static KtConnCacheEntry *GetConnCacheEntry(struct ktTableOptions *table_options)
 {
+
 	bool found;
 	KtConnCacheKey key;
 	KtConnCacheEntry *entry;
+
+	ktelog(DEBUG1, "Entering function");
 
 	/* First time through, initialize connection cache hashtable */
 	if(ConnectionHash == NULL) {
@@ -484,6 +489,7 @@ static KtConnCacheEntry *GetConnCacheEntry(struct ktTableOptions *table_options)
 static bool KtOpenConnection(KtConnCacheEntry *entry,
                              struct ktTableOptions *table_options)
 {
+	ktelog(DEBUG1, "Entering function");
 	if(entry->db == NULL) {
 		int64_t now;
 		struct timeval tv;
@@ -564,10 +570,9 @@ static void getTableOptions(Oid foreigntableid,
 	UserMapping *mapping;
 	List *options;
 	ListCell *lc;
+	bool close_server = false;
 
-#ifdef DEBUG
-	ktelog(NOTICE, "getTableOptions");
-#endif
+	ktelog(DEBUG1, "Entering function");
 
 	/*
 	 * Extract options from FDW objects. We only need to worry about server
@@ -592,14 +597,29 @@ static void getTableOptions(Oid foreigntableid,
 	foreach(lc, options) {
 		DefElem *def = (DefElem *)lfirst(lc);
 
-		if(strcmp(def->defname, "host") == 0)
-			table_options->host = defGetString(def);
+		if(strcmp(def->defname, "host") == 0) {
+			char *host = defGetString(def);
+			if(!table_options->host || !host || strcmp(host, table_options->host) != 0) {
+				close_server = true;
+				table_options->host = host;
+			}
+		}
 
-		if(strcmp(def->defname, "port") == 0)
-			table_options->port = atoi(defGetString(def));
+		if(strcmp(def->defname, "port") == 0) {
+			int32_t port = atoi(defGetString(def));
+			if(port != table_options->port) {
+				close_server = true;
+				table_options->port = port;
+			}
+		}
 
-		if(strcmp(def->defname, "timeout") == 0)
-			table_options->timeout = atoi(defGetString(def));
+		if(strcmp(def->defname, "timeout") == 0) {
+			double timeout = atoi(defGetString(def));
+			if(timeout != table_options->timeout) {
+				close_server = true;
+				table_options->timeout = timeout;
+			}
+		}
 
 		if(strcmp(def->defname, "reconnect") == 0)
 			table_options->reconnect = atoi(defGetString(def));
@@ -615,6 +635,12 @@ static void getTableOptions(Oid foreigntableid,
 
 	if(!table_options->reconnect) {
 		table_options->reconnect = -1;// One secound timeout
+	}
+	if(close_server) {
+		KtConnCacheEntry *entry = GetConnCacheEntry(table_options);
+		if(entry->db) {
+			ktdbclose(entry->db);
+		}
 	}
 }
 
@@ -710,7 +736,6 @@ Datum kt_fdw_validator(PG_FUNCTION_ARGS UNUSED)
 			table_options.reconnect = atoi(defGetString(def));
 		}
 	}
-
 	PG_RETURN_VOID();
 }
 
