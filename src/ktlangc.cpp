@@ -149,11 +149,11 @@ bool ktget(KTDB *db, char *key, char **value)
 	return true;
 }
 
-bool ktgetl(KTDB *db, char *key, size_t *key_len, char **value, size_t *val_len)
+bool ktgetl(KTDB *db, char *key, size_t key_len, char **value, size_t *val_len)
 {
 	_assert_(db && key);
 
-	std::string skey(key, *key_len);
+	std::string skey(key, key_len);
 	std::string sval;
 	RemoteDB *pdb = (RemoteDB *)db;
 

@@ -1061,7 +1061,7 @@ static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node)
 			len[0] = strlen(estate->key_based_qual_value);
 			estate->key_based_qual_sent = true;
 			found                       = ktgetl(
-                                estate->db, val[0], &len[0], &val[1], &len[1]);
+                                estate->db, val[0], len[0], &val[1], &len[1]);
 		}
 	} else {
 		found = nextl(estate->db,
@@ -1442,19 +1442,49 @@ RETRY:
 #endif
 					}
 				}
-			} else if(!ktsetl(fmstate->db,
-			                  VARDATA(bkey),
-			                  VARSIZE(bkey) - VARHDRSZ,
-			                  VARDATA(bval),
-			                  VARSIZE(bval) - VARHDRSZ)) {
+			} else {
+				char *ex_val = NULL;
+				size_t ex_val_len;
+
+				char *key      = VARDATA(bkey);
+				size_t key_len = VARSIZE(bkey) - VARHDRSZ;
+
+				char *val      = VARDATA(bval);
+				size_t val_len = VARSIZE(bval) - VARHDRSZ;
+				if(!ktgetl(fmstate->db,
+				           key,
+				           key_len,
+				           &ex_val,
+				           &ex_val_len) &&
+				   ktgeterrornum(fmstate->db) != 3) {
 #ifdef USE_TRANSACTIONS
-				ktelogdb(ERROR, fmstate->db);
+					ktelogdb(ERROR, fmstate->db);
 #else
-				handleErrors(fmstate->db, &fmstate->opt);
-				// If handle errors returns connection is
-				// re-establised
-				goto RETRY;
+					handleErrors(fmstate->db,
+					             &fmstate->opt);
+					// If handle errors returns
+					// connection is re-establised
+					goto RETRY;
 #endif
+				}
+				if(!ex_val || ex_val_len != val_len ||
+				   strncmp(ex_val, val, val_len) != 0) {
+					if(!ktsetl(fmstate->db,
+					           VARDATA(bkey),
+					           VARSIZE(bkey) - VARHDRSZ,
+					           VARDATA(bval),
+					           VARSIZE(bval) - VARHDRSZ)) {
+#ifdef USE_TRANSACTIONS
+						ktelogdb(ERROR, fmstate->db);
+#else
+						handleErrors(fmstate->db,
+						             &fmstate->opt);
+						// If handle errors returns
+						// connection is re-establised
+						goto RETRY;
+#endif
+					}
+				}
 			}
 		} break;
 		case APPEND: {

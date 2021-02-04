@@ -73,8 +73,7 @@ void ktcurdel(KTCUR *cur);
 bool next(KTDB *db, KTCUR *cur, char **key, char **value);
 bool ktget(KTDB *db, char *key, char **value);
 
-bool ktgetl(
-        KTDB *db, char *key, size_t *key_len, char **value, size_t *val_len);
+bool ktgetl(KTDB *db, char *key, size_t key_len, char **value, size_t *val_len);
 int32_t ktcheckl(KTDB *db, const char *key, size_t key_len);
 bool nextl(KTDB *db,
            KTCUR *cur,
