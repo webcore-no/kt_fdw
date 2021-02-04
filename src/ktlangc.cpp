@@ -15,6 +15,7 @@
  */
 
 #include "ktlangc.h"
+#include <bits/stdint-intn.h>
 #include <kccommon.h>
 #include <ktremotedb.h>
 
@@ -163,6 +164,14 @@ bool ktgetl(KTDB *db, char *key, size_t *key_len, char **value, size_t *val_len)
 	memcpy(*value, sval.c_str(), sval.length());
 
 	return true;
+}
+
+int32_t ktcheckl(KTDB *db, const char *key, size_t key_len)
+{
+	_assert_(db && key);
+	RemoteDB *pdb = (RemoteDB *)db;
+
+	return pdb->check(key, key_len);
 }
 
 bool ktadd(KTDB *db, const char *key, const char *value)
