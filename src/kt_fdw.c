@@ -401,7 +401,6 @@ static void ktSubXactCallback(XactEvent event, void *arg UNUSED)
 		}
 		entry->xact_depth = 0;
 	}
-
 	xact_got_connection = false;
 }
 
@@ -485,6 +484,9 @@ static KtConnCacheEntry *GetConnCacheEntry(struct ktTableOptions *table_options)
 		entry->db            = NULL;
 		entry->creation_time = 0;
 		entry->xact_depth    = 0;
+		entry->host = NULL;
+		entry->port = 0;
+		entry->timeout = 0;
 	}
 	return entry;
 }
@@ -495,10 +497,14 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 	ktelog(DEBUG1, "Entering function");
 	// Check if server has the same attributes
 	if(entry->db) {
-		if(strcmp(entry->host, table_options->host) != 0 ||
-				entry->port != table_options->port ||
-				entry->timeout != table_options->timeout) {
-			ktdbclose(entry->db);
+		if(!entry->host ||
+			strcmp(entry->host, table_options->host) != 0 ||
+			entry->port != table_options->port ||
+			entry->timeout != table_options->timeout) {
+			if(!ktdbclose(entry->db)) {
+	    			elog(ERROR, "Error could not close connection");
+			}
+			ktdbdel(entry->db);
 			entry->db = NULL;
 		}
 	}
@@ -510,9 +516,12 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
 
-		entry->host = table_options->host;
+		free(entry->host);
+		entry->host = strdup(table_options->host);
+
 		entry->port = table_options->port;
 		entry->timeout = table_options->timeout;
+
 		if(entry->creation_time == 0 ||
 		   (table_options->reconnect != -1 &&
 		    entry->creation_time + table_options->reconnect < now)) {
