@@ -35,7 +35,8 @@ SHLIB_LINK    = -lkyototycoon -lsasl2 -lkyotocabinet
 FLAGS         = -march=native -m64 -g -O2 -Wall -Wextra -Werror -fPIC -fsigned-char \
                 -Wno-error=unused-parameter \
                 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter \
-                -DUSE_TRANSACTIONS -O
+                -DUSE_TRANSACTIONS -O \
+                $(C??FLAGS)
 PG_CXXFLAGS   = $(CXXFLAGS) $(FLAGS)
 PG_CFLAGS     = $(CFLAGS) $(FLAGS)
 

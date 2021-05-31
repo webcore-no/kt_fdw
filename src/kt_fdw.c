@@ -258,6 +258,9 @@ typedef struct {
 	KTDB *db;
 	int xact_depth;
 	int64_t creation_time;
+	char *host;
+	int32_t port;
+	double timeout;
 } KtConnCacheEntry;
 
 static HTAB *ConnectionHash = NULL;
@@ -490,12 +493,26 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
                              struct ktTableOptions *table_options)
 {
 	ktelog(DEBUG1, "Entering function");
+	// Check if server has the same attributes
+	if(entry->db) {
+		if(strcmp(entry->host, table_options->host) != 0 ||
+				entry->port != table_options->port ||
+				entry->timeout != table_options->timeout) {
+			ktdbclose(entry->db);
+			entry->db = NULL;
+		}
+	}
+
 	if(entry->db == NULL) {
 		int64_t now;
 		struct timeval tv;
 		gettimeofday(&tv, NULL);
 		now = (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 
+
+		entry->host = table_options->host;
+		entry->port = table_options->port;
+		entry->timeout = table_options->timeout;
 		if(entry->creation_time == 0 ||
 		   (table_options->reconnect != -1 &&
 		    entry->creation_time + table_options->reconnect < now)) {
@@ -508,7 +525,6 @@ static bool KtOpenConnection(KtConnCacheEntry *entry,
 				        kterrmsg("could not allocate memory "
 				                 "for ktdb"));
 			}
-
 			if(!ktdbopen(entry->db,
 			             table_options->host,
 			             table_options->port,
@@ -570,7 +586,6 @@ static void getTableOptions(Oid foreigntableid,
 	UserMapping *mapping;
 	List *options;
 	ListCell *lc;
-	bool close_server = false;
 
 	ktelog(DEBUG1, "Entering function");
 
@@ -596,29 +611,19 @@ static void getTableOptions(Oid foreigntableid,
 	/* Loop through the options, and get the server/port */
 	foreach(lc, options) {
 		DefElem *def = (DefElem *)lfirst(lc);
-
 		if(strcmp(def->defname, "host") == 0) {
 			char *host = defGetString(def);
-			if(!table_options->host || !host || strcmp(host, table_options->host) != 0) {
-				close_server = true;
-				table_options->host = host;
-			}
+			table_options->host = host;
 		}
 
 		if(strcmp(def->defname, "port") == 0) {
 			int32_t port = atoi(defGetString(def));
-			if(port != table_options->port) {
-				close_server = true;
-				table_options->port = port;
-			}
+			table_options->port = port;
 		}
 
 		if(strcmp(def->defname, "timeout") == 0) {
 			double timeout = atoi(defGetString(def));
-			if(timeout != table_options->timeout) {
-				close_server = true;
-				table_options->timeout = timeout;
-			}
+			table_options->timeout = timeout;
 		}
 
 		if(strcmp(def->defname, "reconnect") == 0)
@@ -635,12 +640,6 @@ static void getTableOptions(Oid foreigntableid,
 
 	if(!table_options->reconnect) {
 		table_options->reconnect = -1;// One secound timeout
-	}
-	if(close_server) {
-		KtConnCacheEntry *entry = GetConnCacheEntry(table_options);
-		if(entry->db) {
-			ktdbclose(entry->db);
-		}
 	}
 }
 

@@ -4,13 +4,9 @@
 - [ ] Make sure transactions fail on connection loss
 - [X] Change from timeout to time/interval/nil reconnect
 - [ ] Err output what column is bad
-- [ ] Use only ktelog
+- [ ] Use kt versions of logging
+- [ ] Use errorcodes from "utils/errcodes.h"
 
 # Tests that need to be written
-- [X] kt_set
-- [X] kt_append
-- [X] Insert value = NULL
-- [X] NULL byte in keys and values
-- [ ] options
 - [ ] Reconnect to kyototycoon
-- [ ] No kt server test
+- [ ] 
